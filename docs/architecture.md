@@ -45,9 +45,12 @@ Given `["config", "set", "--theme", "dark"]`:
 [`parseFlags()`](https://github.com/johanneslatzel/terminal/blob/main/src/input/parser.ts) converts unmatched tokens to `Record<string, string>`:
 
 ```
---theme dark → { theme: "dark" }
---verbose    → { verbose: "true" }
+--theme dark   → { theme: "dark" }
+--verbose      → { verbose: "true" }
+--fields id, name → { fields: "id, name" }
 ```
+
+Bare tokens that don't match a positional definition are grouped onto the most recently written argument with a space separator. This lets `--fields id, name` produce the value `"id, name"` without quoting. Tokens with no prior argument and no positional definition still throw.
 
 Wrapped in [`CommandArguments`](arguments/index.md) with typed accessors.
 

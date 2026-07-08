@@ -76,6 +76,12 @@ describe('arg', () => {
         expect(def.name).toBe('query');
         expect(def.position).toBe(0);
     });
+
+    it('accepts optional secret flag', () => {
+        const def = arg('password', 'Your password', z.string(), undefined, undefined, true);
+        expect(def.name).toBe('password');
+        expect(def.secret).toBe(true);
+    });
 });
 
 describe('position validation', () => {

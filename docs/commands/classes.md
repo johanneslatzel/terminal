@@ -6,6 +6,9 @@ Use these when a command needs state, helper methods, or complex logic.
 
 See [`src/command-tree.ts`](https://github.com/johanneslatzel/terminal/blob/main/src/command-tree.ts) for the `Command` abstract class signature.
 
+The constructor accepts an optional 4th argument for aliases:
+`super(name, description?, argDefs?, aliases?)`.
+
 ```ts
 class GreetCommand extends Command {
     constructor() {
@@ -16,6 +19,15 @@ class GreetCommand extends Command {
     async execute(ctx: CommandContext, args: CommandArguments): Promise<void> {
         const name = args.has('name') ? await args.require<string>('name') : 'World';
         ctx.stdout.write(`Hello, ${name}!\n`);
+    }
+}
+
+class DeployCommand extends Command {
+    constructor() {
+        super('deploy', 'Deploy the app', [], ['d']); // alias: "d"
+    }
+    async execute(ctx: CommandContext, _args: CommandArguments): Promise<void> {
+        ctx.stdout.write('Deploying...\n');
     }
 }
 ```

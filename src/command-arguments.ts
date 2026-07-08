@@ -1,11 +1,14 @@
 import * as readline from 'node:readline';
-import type { z } from 'zod';
+import { z } from 'zod';
 import { InvalidArgumentsError } from './errors.js';
+import { readRawTerminal, suspendReadline } from './hidden-input.js';
 
 /** Describes a single command-line argument (`--name value`). */
 export interface CommandArgumentDefinition {
     /** Argument name (without `--` prefix). */
     name: string;
+    /** Alternate names for this argument. Single-char aliases use `-x`, multi-char use `--name`. */
+    aliases?: string[];
     /** Human-readable description shown in help output. */
     description?: string;
     /** Whether the argument must always be provided. */
@@ -14,6 +17,12 @@ export interface CommandArgumentDefinition {
     schema: z.ZodType;
     /** 0-based index for positional (bare token) arguments. */
     position?: number;
+    /**
+     * When `true`, {@link require} prompts with hidden input (no echo)
+     * instead of the normal visible prompt.  Ignored when the argument
+     * is provided on the command line.
+     */
+    secret?: boolean;
 }
 
 /**
@@ -97,7 +106,41 @@ export class CommandArguments {
      *   missing and no readline interface is available.
      */
     async require<T = unknown>(name: string): Promise<T> {
-        const raw = await this.resolve(name);
+        const def = this.requireDef(name);
+        const raw = await this.resolve(name, def.secret === true);
+        const value: unknown =
+            def.schema instanceof z.ZodArray
+                ? raw
+                      .split(',')
+                      .map((s) => s.trim())
+                      .filter((s) => s.length > 0)
+                : raw;
+        const parsed = def.schema.safeParse(value);
+        if (!parsed.success) {
+            throw new InvalidArgumentsError(
+                `Argument "${name}": ${parsed.error.issues.map((e) => e.message).join('; ')}`
+            );
+        }
+        return parsed.data as T;
+    }
+
+    /**
+     * Like {@link require}, but always prompts with hidden input when the
+     * argument is not provided on the command line, regardless of the
+     * definition's `secret` flag.
+     *
+     * @example
+     * ```ts
+     * const password = await args.requireSecret('password');
+     * ```
+     *
+     * @param name - Argument name (without `--` prefix).
+     * @throws {InvalidArgumentsError} When no definition exists for
+     *   `name`, when schema validation fails, or when the argument is
+     *   missing and no readline interface is available.
+     */
+    async requireSecret(name: string): Promise<string> {
+        const raw = await this.resolveSecret(name);
         const def = this.requireDef(name);
         const parsed = def.schema.safeParse(raw);
         if (!parsed.success) {
@@ -105,7 +148,7 @@ export class CommandArguments {
                 `Argument "${name}": ${parsed.error.issues.map((e) => e.message).join('; ')}`
             );
         }
-        return parsed.data as T;
+        return parsed.data as string;
     }
 
     /**
@@ -152,20 +195,37 @@ export class CommandArguments {
         return validated.data as boolean;
     }
 
-    private async resolve(name: string): Promise<string> {
+    private async resolve(name: string, useSecret = false): Promise<string> {
         if (name in this.record) {
             return this.record[name]!;
         }
         if (this.rl) {
-            return await this.promptRequired(name);
+            return useSecret ? await this.promptSecret(name) : await this.promptRequired(name);
         }
         throw new InvalidArgumentsError(`Argument "${name}" is required but not provided`);
+    }
+
+    private async resolveSecret(name: string): Promise<string> {
+        return this.resolve(name, true);
     }
 
     private promptRequired(name: string): Promise<string> {
         return new Promise((resolve) => {
             this.rl!.question(`argument [${name}]: `, resolve);
         });
+    }
+
+    private async promptSecret(name: string): Promise<string> {
+        const rl = this.rl!;
+        if (!((rl as any).input as NodeJS.ReadStream).isTTY) {
+            return this.promptRequired(name);
+        }
+        const { input, output, resume } = suspendReadline(rl);
+        try {
+            return await readRawTerminal(input, output, `argument [${name}]: `);
+        } finally {
+            resume();
+        }
     }
 
     private requireDef(name: string): CommandArgumentDefinition {

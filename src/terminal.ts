@@ -1,5 +1,7 @@
 import * as readline from 'node:readline';
-import { Command, CommandContainer, type CommandContext, type TerminalOptions } from './types.js';
+import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { dirname } from 'node:path';
+import { Command, type CommandContext, type TerminalOptions } from './types.js';
 import { CommandTree } from './command-tree.js';
 import { tokenize } from './input/parser.js';
 import { parseFlags } from './input/args-parser.js';
@@ -11,6 +13,7 @@ import { ExitCommand } from './commands/exit.js';
 import { ClearCommand } from './commands/clear.js';
 import { Hook } from './hook.js';
 import { TerminalHookBuilder } from './terminal-hook-builder.js';
+import { readRawTerminal, suspendReadline } from './hidden-input.js';
 import {
     TypedHook,
     BeforeParseHook,
@@ -18,6 +21,8 @@ import {
     BeforeExecuteHook,
     AfterExecuteHook,
     BeforeExitHook,
+    OnStartHook,
+    OnStopHook,
     OnErrorHook
 } from './hooks.js';
 
@@ -42,16 +47,24 @@ export class Terminal {
     private _beforeExecuteHooks: BeforeExecuteHook[] = [];
     private _afterExecuteHooks: AfterExecuteHook[] = [];
     private _beforeExitHooks: BeforeExitHook[] = [];
+    private _onStartHooks: OnStartHook[] = [];
+    private _onStopHooks: OnStopHook[] = [];
     private _onErrorHooks: OnErrorHook[] = [];
+    private _history: string[] = [];
     private running = false;
-    private static readonly DEFAULT_OPTIONS: Required<TerminalOptions> = {
+    private static readonly DEFAULT_OPTIONS = {
         prompt: '> ',
         stdin: process.stdin,
         stdout: process.stdout,
         historySize: 100
     };
 
-    private options: Required<TerminalOptions>;
+    private options: TerminalOptions & {
+        prompt: string;
+        stdin: NodeJS.ReadStream;
+        stdout: NodeJS.WriteStream;
+        historySize: number;
+    };
     private ctx: CommandContext;
     private ctxState: Record<string, unknown> = {};
 
@@ -86,44 +99,10 @@ export class Terminal {
     }
 
     /**
-     * Register a command at the root level or as a subcommand of a
-     * parent container specified by a dot-separated path.
-     *
-     * @param command    - The command to register.
-     * @param parentPath - Optional dot-separated path to a parent
-     *                     container (e.g. `"config.set"`). All
-     *                     intermediate containers must already exist.
-     * @throws When the parent path does not resolve to a container.
-     *
-     * @example
-     * ```
-     * term.register(cmd)                  // root level
-     * term.register(cmd, 'config')         // under root "config"
-     * term.register(cmd, 'config.set')     // under config > set
-     * ```
+     * Register a command at the root level.
      */
-    register(command: Command, parentPath?: string): void {
-        if (!parentPath) {
-            this.tree.add(command);
-            return;
-        }
-
-        const segments = parentPath.split('.');
-        let container: CommandContainer = this.tree;
-        let level: Command[] = this.tree.commands();
-
-        for (const seg of segments) {
-            const parent = level.find((c) => c.name() === seg);
-            if (!parent || !(parent instanceof CommandContainer)) {
-                throw new Error(
-                    `Cannot register "${command.name()}": parent path "${parentPath}" does not resolve to a container at segment "${seg}"`
-                );
-            }
-            container = parent;
-            level = parent.commands();
-        }
-
-        container.add(command);
+    register(command: Command): void {
+        this.tree.add(command);
     }
 
     /**
@@ -144,6 +123,8 @@ export class Terminal {
             beforeExecute: (fn) => this._addHook(this._beforeExecuteHooks, fn),
             afterExecute: (fn) => this._addHook(this._afterExecuteHooks, fn),
             beforeExit: (fn) => this._addHook(this._beforeExitHooks, fn),
+            onStart: (fn) => this._addHook(this._onStartHooks, fn),
+            onStop: (fn) => this._addHook(this._onStopHooks, fn),
             onError: (fn) => this._addHook(this._onErrorHooks, fn)
         });
     }
@@ -167,6 +148,114 @@ export class Terminal {
     }
 
     /**
+     * Set the prompt string. Takes effect immediately on the running
+     * terminal and persists across {@link start}/{@link stop} cycles.
+     */
+    setPrompt(prompt: string): void {
+        this.options.prompt = prompt;
+        this.rl?.setPrompt(prompt);
+    }
+
+    /**
+     * Read a single line of hidden input (no echo).
+     *
+     * Temporarily takes over stdin in raw mode, reads character-by-character,
+     * echoes `mask` per keystroke, then restores the readline interface and
+     * calls `rl.prompt()`.
+     *
+     * Falls back to a visible {@link readline.Interface.question} call when
+     * stdin is not a TTY.
+     *
+     * @param prompt - Text displayed before reading input.
+     * @param mask   - Character echoed per keystroke (default `'*'`).
+     *                 Pass `''` for no echo at all.
+     * @returns The accumulated input.  Empty string on Ctrl+C.
+     * @throws {Error} If the terminal has not been started (no readline).
+     */
+    async questionHidden(prompt: string, mask: string = '*'): Promise<string> {
+        const rl = this.rl;
+        if (!rl) {
+            throw new Error('Terminal not started');
+        }
+
+        if (!this.options.stdin.isTTY) {
+            return new Promise((resolve) => {
+                rl.question(prompt, resolve);
+            });
+        }
+
+        const { input, output, resume } = suspendReadline(rl);
+        try {
+            return await readRawTerminal(input, output, prompt, mask);
+        } finally {
+            resume();
+        }
+    }
+
+    /**
+     * Read the history file (JSON array of strings), deduplicate (keep the
+     * most recent occurrence of each entry), trim to `historySize`, and store
+     * the result internally so the next {@link start} call will pass it to
+     * Node's readline interface.
+     *
+     * Returns the parsed (deduplicated, trimmed) array. Safe to call before
+     * `start()` — has no effect if called afterwards.
+     */
+    async loadHistory(): Promise<string[]> {
+        const historyPath = this.options.historyPath;
+        if (!historyPath) {
+            this._history = [];
+            return [];
+        }
+        try {
+            const raw = await readFile(historyPath, 'utf-8');
+            const parsed: unknown = JSON.parse(raw);
+            if (!Array.isArray(parsed)) {
+                this._history = [];
+                return [];
+            }
+
+            // Deduplicate: iterate newest-first, keep first occurrence
+            const seen = new Set<string>();
+            const deduped: string[] = [];
+            for (let i = parsed.length - 1; i >= 0; i--) {
+                const item = String(parsed[i]);
+                if (!seen.has(item)) {
+                    seen.add(item);
+                    deduped.push(item);
+                }
+            }
+            deduped.reverse(); // back to oldest-first order
+
+            const trimmed = deduped.slice(-this.options.historySize);
+            this._history = trimmed;
+            return trimmed;
+        } catch {
+            this._history = [];
+            return [];
+        }
+    }
+
+    /**
+     * Write the current readline history (`rl.history`) to the history file
+     * as a JSON array, trimmed to `historySize`. No-op if the terminal
+     * hasn't been started yet (no `rl`).
+     */
+    async saveHistory(): Promise<void> {
+        const historyPath = this.options.historyPath;
+        if (!historyPath) return;
+        if (this._history.length === 0) return;
+        const trimmed = this._history.slice(-this.options.historySize);
+        try {
+            await mkdir(dirname(historyPath), { recursive: true });
+            await writeFile(historyPath, JSON.stringify(trimmed, null, 2) + '\n', 'utf-8');
+        } catch {
+            // Silently ignore — file-write errors should not crash the
+            // terminal.
+        }
+    }
+
+    /**
      * Start the terminal loop. Idempotent — safe to call multiple times.
      */
     async start(): Promise<void> {
@@ -175,13 +264,16 @@ export class Terminal {
 
         this.rl = this.createReadline();
         this.bindEvents(this.rl);
+        for (const hook of this._onStartHooks) {
+            await hook.exec();
+        }
         this.rl.prompt();
     }
 
     private createReadline(): readline.Interface {
         const completer = new Completer(this.tree);
 
-        return readline.createInterface({
+        const rlOptions: readline.ReadLineOptions = {
             input: this.options.stdin,
             output: this.options.stdout,
             prompt: this.options.prompt,
@@ -191,7 +283,14 @@ export class Terminal {
                 return [matches, partial] as [string[], string];
             },
             terminal: this.options.stdin.isTTY
-        });
+        };
+
+        if (this._history.length > 0) {
+            rlOptions.history = [...this._history];
+            rlOptions.removeHistoryDuplicates = true;
+        }
+
+        return readline.createInterface(rlOptions);
     }
 
     private bindEvents(rl: readline.Interface): void {
@@ -220,17 +319,32 @@ export class Terminal {
      * Stop the terminal loop. Closes the readline interface.
      */
     async stop(): Promise<void> {
-        if (this.running) {
-            for (const hook of this._beforeExitHooks) {
-                await hook.exec();
-            }
-        }
+        if (!this.running) return;
         this.running = false;
-        this.rl?.close();
+        for (const hook of this._beforeExitHooks) {
+            await hook.exec();
+        }
+        this.rl!.close();
         this.rl = null;
         this.options.stdin.pause();
+        for (const hook of this._onStopHooks) {
+            await hook.exec();
+        }
     }
 
+    /**
+     * Process a single line of input: tokenize, resolve the command tree,
+     * execute, and persist the input to history (in the `finally` block
+     * so it runs regardless of success or failure).
+     *
+     * History notes:
+     * - Skips empty lines and consecutive duplicates (same as the last entry).
+     * - If the input already exists earlier in the array, the old occurrence
+     *   is removed so the most recent use moves to the end (MRU ordering).
+     * - Trims to `historySize` after insertion.
+     *
+     * This is the only place `_history` gets new entries at runtime.
+     */
     private async handleLine(input: string): Promise<void> {
         try {
             const tokens = await this.processInput(input);
@@ -246,6 +360,14 @@ export class Terminal {
         } catch (error) {
             await this.handleError(error);
         } finally {
+            if (input.length > 0 && input !== this._history.at(-1)) {
+                const idx = this._history.indexOf(input);
+                if (idx !== -1) this._history.splice(idx, 1);
+                this._history.push(input);
+                if (this._history.length > this.options.historySize) {
+                    this._history = this._history.slice(-this.options.historySize);
+                }
+            }
             if (this.running) {
                 this.rl?.prompt();
             }

@@ -14,10 +14,19 @@ Commands:
   clear   Clear terminal
 ```
 
-Use `--command` to scope help:
+Use `--command <name>` or just `<name>` to scope help:
 
 ```
 > help --command help
+help - Show help
+Arguments:
+  --command   Show help for a specific command
+```
+
+The positional shorthand works the same way:
+
+```
+> help help
 help - Show help
 Arguments:
   --command   Show help for a specific command
@@ -35,10 +44,33 @@ Subcommands:
   set   Set a config value
 ```
 
+Nested subcommands are resolved by walking the command tree:
+
+```
+> help config get
+get - Get a config value
+Arguments:
+  --key   Config key
+```
+
+Multiple levels of nesting are supported:
+
+```
+> help game list verify
+verify - Verify a listing
+```
+
+Quoted paths with `--command` work the same way:
+
+```
+> help --command "game list verify"
+verify - Verify a listing
+```
+
 Unknown command:
 
 ```
-> help --command nonexistent
+> help nonexistent
 Unknown command: nonexistent
 ```
 

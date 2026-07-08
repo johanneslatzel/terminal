@@ -37,7 +37,7 @@ export class CommandTree extends CommandContainer {
         let tokenIndex = 0;
 
         for (const token of tokens) {
-            const cmd = level.find((c) => c.name() === token);
+            const cmd = level.find((c) => c.matches(token));
             if (!cmd) break;
             matched = cmd;
             tokenIndex++;
@@ -73,8 +73,17 @@ export class CommandTree extends CommandContainer {
      */
     findSuggestions(prefix: string): string[] {
         const lower = prefix.toLowerCase();
-        return this.commands()
-            .filter((c) => c.name().toLowerCase().startsWith(lower))
-            .map((c) => c.name());
+        const results = new Set<string>();
+        for (const c of this.commands()) {
+            if (c.name().toLowerCase().startsWith(lower)) {
+                results.add(c.name());
+            }
+            for (const alias of c.aliases()) {
+                if (alias.toLowerCase().startsWith(lower)) {
+                    results.add(alias);
+                }
+            }
+        }
+        return [...results];
     }
 }

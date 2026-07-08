@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { parseFlags } from '../../src/input/args-parser.js';
 import { InvalidArgumentsError } from '../../src/errors.js';
+import { Command } from '../../src/types.js';
+import { z } from 'zod';
 import type { CommandArgumentDefinition } from '../../src/command-arguments.js';
 
 describe('parseFlags', () => {
@@ -138,5 +140,80 @@ describe('parseFlags', () => {
         expect(parseFlags(['--theme', 'dark'], undefined)).toEqual({ theme: 'dark' });
         expect(parseFlags(['--verbose'])).toEqual({ verbose: 'true' });
         expect(() => parseFlags(['help'], undefined)).toThrow('Unexpected token "help"');
+    });
+
+    it('groups bare tokens after --flag onto the flag value', () => {
+        expect(parseFlags(['--fields', 'id,', 'name'])).toEqual({ fields: 'id, name' });
+    });
+
+    it('groups multiple bare tokens after --flag', () => {
+        expect(parseFlags(['--fields', 'id', 'name', 'email'])).toEqual({
+            fields: 'id name email'
+        });
+    });
+
+    it('groups bare tokens after a positional arg by appending to the last positional', () => {
+        const defs: CommandArgumentDefinition[] = [
+            { name: 'query', position: 0, schema: { safeParse: () => ({ success: true, data: '' }) } as any }
+        ];
+        expect(parseFlags(['hello', 'world', 'foo'], defs)).toEqual({ query: 'hello world foo' });
+    });
+
+    it('positional defs take priority over bare token grouping', () => {
+        const defs: CommandArgumentDefinition[] = [
+            { name: 'query', position: 0, schema: { safeParse: () => ({ success: true, data: '' }) } as any }
+        ];
+        expect(parseFlags(['--fields', 'id', 'name', 'hello'], defs)).toEqual({
+            fields: 'id',
+            query: 'name hello'
+        });
+    });
+
+    it('groups bare tokens after --flag when no positional defs exist', () => {
+        const defs: CommandArgumentDefinition[] = [
+            { name: 'fields', schema: { safeParse: () => ({ success: true, data: '' }) } as any }
+        ];
+        expect(parseFlags(['--fields', 'id,', 'name'], defs)).toEqual({ fields: 'id, name' });
+    });
+
+    it('throws for bare token with no prior flag and no positional defs', () => {
+        const defs: CommandArgumentDefinition[] = [
+            { name: 'fields', schema: { safeParse: () => ({ success: true, data: '' }) } as any }
+        ];
+        expect(() => parseFlags(['foo'], defs)).toThrow('Unexpected token "foo"');
+    });
+
+    it('groups bare tokens after boolean --flag', () => {
+        const defs: CommandArgumentDefinition[] = [
+            { name: 'verbose', schema: { safeParse: () => ({ success: true, data: false }) } as any }
+        ];
+        expect(parseFlags(['--verbose', 'true'], defs)).toEqual({ verbose: 'true' });
+    });
+
+    it('throws for duplicate arg aliases across different definitions', () => {
+        expect(
+            () =>
+                new (class extends Command {
+                    constructor() {
+                        super('test', '', [
+                            { name: 'name', schema: z.string(), aliases: ['n'] },
+                            { name: 'other', schema: z.string(), aliases: ['n'] }
+                        ]);
+                    }
+                    async execute() {}
+                })()
+        ).toThrow(InvalidArgumentsError);
+        expect(
+            () =>
+                new (class extends Command {
+                    constructor() {
+                        super('test', '', [
+                            { name: 'name', schema: z.string(), aliases: ['n'] },
+                            { name: 'other', schema: z.string(), aliases: ['n'] }
+                        ]);
+                    }
+                    async execute() {}
+                })()
+        ).toThrow('Duplicate alias');
     });
 });

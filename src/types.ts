@@ -1,6 +1,7 @@
 import type { Terminal } from './terminal.js';
 import type { CommandArguments, CommandArgumentDefinition } from './command-arguments.js';
 import { InvalidArgumentsError } from './errors.js';
+import { validateAliases, validateArgDefAliases, OwnerType } from './validate-aliases.js';
 
 /**
  * A leaf node in the command tree. Has no subcommand support.
@@ -8,6 +9,7 @@ import { InvalidArgumentsError } from './errors.js';
  */
 export abstract class Command {
     private _name: string;
+    private _aliases: string[];
     private _description: string | undefined;
     private _definitions: CommandArgumentDefinition[];
 
@@ -15,18 +17,27 @@ export abstract class Command {
      * @param name        - Command name used for matching input tokens.
      * @param description - Short description shown in help output.
      * @param argDefs     - Argument definitions for `--name value` pairs.
+     * @param aliases     - Alternate names for this command.
      */
-    constructor(name: string, description?: string, argDefs?: CommandArgumentDefinition[]) {
+    constructor(
+        name: string,
+        description?: string,
+        argDefs?: CommandArgumentDefinition[],
+        aliases?: string[]
+    ) {
         if (name.length === 0) {
             throw new InvalidArgumentsError('Command name cannot be empty');
         }
         if (/\s/.test(name)) {
             throw new InvalidArgumentsError(`Command name "${name}" must not contain whitespace`);
         }
+        validateAliases(aliases, OwnerType.Command, name);
         this._name = name;
+        this._aliases = aliases ?? [];
         this._description = description;
         this._definitions = argDefs ?? [];
         this._validatePositions(name);
+        validateArgDefAliases(argDefs ?? [], name);
     }
 
     private _validatePositions(name: string): void {
@@ -61,6 +72,16 @@ export abstract class Command {
         return this._name;
     }
 
+    /** Alternate names for this command. */
+    aliases(): string[] {
+        return [...this._aliases];
+    }
+
+    /** Check if a token matches this command's name or any alias. */
+    matches(token: string): boolean {
+        return this._name === token || this._aliases.includes(token);
+    }
+
     /** Shown in `help` output. */
     description(): string | undefined {
         return this._description;
@@ -93,6 +114,17 @@ export class CommandContainer extends Command {
 
     /** Register a child command. */
     add(command: Command): void {
+        const newNames = [command.name(), ...command.aliases()];
+        for (const existingCommand of this._commands) {
+            const existingNames = [existingCommand.name(), ...existingCommand.aliases()];
+            for (const newName of newNames) {
+                if (existingNames.includes(newName)) {
+                    throw new InvalidArgumentsError(
+                        `Cannot add command "${command.name()}": identifier "${newName}" conflicts with existing command "${existingCommand.name()}"`
+                    );
+                }
+            }
+        }
         this._commands.push(command);
     }
 
@@ -140,4 +172,11 @@ export interface TerminalOptions {
     stdout?: NodeJS.WriteStream;
     /** Readline history size (default `100`). */
     historySize?: number;
+    /**
+     * Path to the JSON file used by {@link Terminal.loadHistory} and
+     * {@link Terminal.saveHistory} to persist command history across
+     * sessions. When set, `loadHistory()` reads from this file and
+     * `saveHistory()` writes to it.
+     */
+    historyPath?: string;
 }

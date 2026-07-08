@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import * as readline from 'node:readline';
+import { PassThrough } from 'node:stream';
 import { z } from 'zod';
 import { CommandArguments } from '../../src/command-arguments.js';
+
 import { InvalidArgumentsError } from '../../src/errors.js';
 import type { CommandArgumentDefinition } from '../../src/command-arguments.js';
 
@@ -144,6 +146,39 @@ describe('CommandArguments', () => {
         });
     });
 
+    describe('require with array schema', () => {
+        const argDefs: CommandArgumentDefinition[] = [
+            { name: 'fields', schema: z.array(z.string()) },
+            { name: 'nums', schema: z.array(z.coerce.number()) }
+        ];
+        const args = (record: Record<string, string>) =>
+            new CommandArguments(record, null, argDefs);
+
+        it('splits comma-separated value into array of strings', async () => {
+            await expect(args({ fields: 'id, name, email' }).require<string[]>('fields')).resolves.toEqual(['id', 'name', 'email']);
+        });
+
+        it('handles single value without commas', async () => {
+            await expect(args({ fields: 'id' }).require<string[]>('fields')).resolves.toEqual(['id']);
+        });
+
+        it('handles empty string', async () => {
+            await expect(args({ fields: '' }).require<string[]>('fields')).resolves.toEqual([]);
+        });
+
+        it('trims whitespace around commas', async () => {
+            await expect(args({ fields: '  a  , b ,c  ,  d' }).require<string[]>('fields')).resolves.toEqual(['a', 'b', 'c', 'd']);
+        });
+
+        it('coerces comma-separated numbers', async () => {
+            await expect(args({ nums: '1, 2, 3' }).require<number[]>('nums')).resolves.toEqual([1, 2, 3]);
+        });
+
+        it('rejects array schema validation errors', async () => {
+            await expect(args({ nums: '1, abc, 3' }).require<number[]>('nums')).rejects.toThrow(InvalidArgumentsError);
+        });
+    });
+
     describe('flag', () => {
         it('returns true for "true"', async () => {
             expect(await makeArgs({ flag: 'true' }).flag('flag')).toBe(true);
@@ -243,16 +278,12 @@ describe('CommandArguments', () => {
 
         it('rejects string "true" through require (no coercion — use flag() instead)', async () => {
             const args = new CommandArguments({ flag: 'true' }, null, defs);
-            await expect(args.require<boolean>('flag')).rejects.toThrow(
-                InvalidArgumentsError
-            );
+            await expect(args.require<boolean>('flag')).rejects.toThrow(InvalidArgumentsError);
         });
 
         it('rejects "yes" through require', async () => {
             const args = new CommandArguments({ flag: 'yes' }, null, defs);
-            await expect(args.require<boolean>('flag')).rejects.toThrow(
-                InvalidArgumentsError
-            );
+            await expect(args.require<boolean>('flag')).rejects.toThrow(InvalidArgumentsError);
         });
 
         it('flag() coerces string "true" to boolean (unlike require)', async () => {
@@ -339,6 +370,96 @@ describe('CommandArguments', () => {
             expect(calls).toHaveLength(2);
             expect(a).toBe('answer-1');
             expect(b).toBe('answer-2');
+        });
+    });
+
+    describe('requireSecret', () => {
+        function makeTtyRl(): { rl: readline.Interface; input: PassThrough; output: PassThrough } {
+            const ttyInput = Object.assign(new PassThrough(), {
+                isTTY: true,
+                isRaw: false,
+                setRawMode: () => {}
+            });
+            // Simulate readline's internal data listener
+            ttyInput.on('data', () => {});
+            const ttyOutput = new PassThrough();
+            return {
+                rl: {
+                    input: ttyInput,
+                    output: ttyOutput,
+                    pause: () => {},
+                    resume: () => {},
+                    prompt: () => {},
+                    question: (_q: string, cb: (a: string) => void) => cb('visible-fallback')
+                } as unknown as readline.Interface,
+                input: ttyInput,
+                output: ttyOutput
+            };
+        }
+
+        const secretDefs: CommandArgumentDefinition[] = [
+            { name: 'password', schema: z.string(), secret: true }
+        ];
+
+        it('returns value when argument is provided on command line', async () => {
+            const args = new CommandArguments({ password: 'hunter2' }, null, secretDefs);
+            expect(await args.requireSecret('password')).toBe('hunter2');
+        });
+
+        it('require() uses hidden prompt when secret:true and arg missing', async () => {
+            const { rl, input } = makeTtyRl();
+            const args = new CommandArguments({}, rl, secretDefs);
+            const promise = args.require<string>('password');
+            input.write('s3cret\n');
+            const result = await promise;
+            expect(result).toBe('s3cret');
+        });
+
+        it('requireSecret prompts with hidden input', async () => {
+            const { rl, input } = makeTtyRl();
+            const args = new CommandArguments({}, rl, secretDefs);
+            const promise = args.requireSecret('password');
+            input.write('hunter2\n');
+            const result = await promise;
+            expect(result).toBe('hunter2');
+        });
+
+        it('requireSecret falls back to visible prompt when stdin not a TTY', async () => {
+            const rl = {
+                input: Object.assign(new PassThrough(), {
+                    isTTY: false,
+                    isRaw: false,
+                    setRawMode: () => {}
+                }),
+                output: new PassThrough(),
+                pause: () => {},
+                resume: () => {},
+                prompt: () => {},
+                question: (_q: string, cb: (a: string) => void) => cb('visible-answer')
+            } as unknown as readline.Interface;
+            const args = new CommandArguments({}, rl, secretDefs);
+            const result = await args.requireSecret('password');
+            expect(result).toBe('visible-answer');
+        });
+
+        it('throws when definition not found', async () => {
+            const args = new CommandArguments({}, null, []);
+            await expect(args.requireSecret('password')).rejects.toThrow(InvalidArgumentsError);
+        });
+
+        it('throws when schema validation fails', async () => {
+            const strictDefs: CommandArgumentDefinition[] = [
+                { name: 'pw', schema: z.string().min(10), secret: true }
+            ];
+            const args = new CommandArguments({ pw: 'short' }, null, strictDefs);
+            await expect(args.requireSecret('pw')).rejects.toThrow(InvalidArgumentsError);
+        });
+
+        it('throws when missing and no readline', async () => {
+            const args = new CommandArguments({}, null, secretDefs);
+            await expect(args.requireSecret('password')).rejects.toThrow(
+                'Argument "password" is required but not provided'
+            );
         });
     });
 

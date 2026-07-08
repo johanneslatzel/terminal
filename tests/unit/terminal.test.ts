@@ -564,4 +564,65 @@ describe('Completer', () => {
         const { matches } = completer.complete('leaf -- ');
         expect(matches).toEqual([]);
     });
+
+    it('includes command aliases in root completion from empty input', () => {
+        const tree = new CommandTree();
+        const cmd = new (class extends Command {
+            async execute() {}
+        })('deploy', 'Deploy', [], ['d', 'dp']);
+        tree.add(cmd);
+
+        const completer = new Completer(tree);
+        const { matches } = completer.complete('');
+        expect(matches).toContain('deploy');
+        expect(matches).toContain('d');
+        expect(matches).toContain('dp');
+    });
+
+    it('completes --flag aliases for commands with aliased arg defs', () => {
+        const tree = new CommandTree();
+        const cmd = new (class extends Command {
+            async execute() {}
+        })('build', 'Build', [{ name: 'output', schema: z.string(), aliases: ['outfile', 'o'] }]);
+        tree.add(cmd);
+
+        const completer = new Completer(tree);
+        const { matches } = completer.complete('build --');
+        expect(matches).toContain('--output');
+        expect(matches).toContain('--outfile');
+    });
+
+    it('skips -x short flag tokens in prefix', () => {
+        const tree = new CommandTree();
+        const sub = new (class extends Command {
+            async execute() {}
+        })('sub', 'Subcommand');
+        const parent = new (class extends CommandContainer {
+            async execute() {}
+        })('config', 'Config');
+        parent.add(sub);
+        tree.add(parent);
+
+        const completer = new Completer(tree);
+        const { matches } = completer.complete('config -x sub');
+        expect(matches).toEqual(['sub']);
+    });
+
+    it('includes subcommand aliases in completion', () => {
+        const tree = new CommandTree();
+        const sub = new (class extends Command {
+            async execute() {}
+        })('set', 'Set', [], ['s']);
+        const parent = new (class extends CommandContainer {
+            async execute() {}
+        })('config', 'Config');
+        parent.add(sub);
+        tree.add(parent);
+
+        const completer = new Completer(tree);
+        const { matches, partial } = completer.complete('config ');
+        expect(partial).toBe('');
+        expect(matches).toContain('set');
+        expect(matches).toContain('s');
+    });
 });

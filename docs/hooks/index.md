@@ -19,9 +19,13 @@ h.dispose(); // unregister (idempotent)
 | ------------------ | --------------------------------------- | ---------------------------------------------- |
 | `.beforeParse()`   | `(input: string) => string`             | Transform raw input before tokenizing          |
 | `.afterParse()`    | `(tokens: string[]) => string[]`        | Rewrite token list after parsing               |
+| `.onStart()`       | `() => void \| Promise<void>`           | Run before the first prompt on start           |
+| `.beforeParse()`   | `(input: string) => string`             | Transform raw input before tokenizing          |
+| `.afterParse()`    | `(tokens: string[]) => string[]`        | Rewrite token list after parsing               |
 | `.beforeExecute()` | `(command, ctx, args) => void \| false` | Cancel execution — return `false` to skip      |
 | `.afterExecute()`  | `(result: unknown) => void`             | Post-process after command returns             |
-| `.beforeExit()`    | `() => void \| Promise<void>`           | Cleanup before terminal stops                  |
+| `.beforeExit()`    | `() => void \| Promise<void>`           | Run before cleanup when terminal stops         |
+| `.onStop()`        | `() => void \| Promise<void>`           | Run after cleanup when terminal stops          |
 | `.onError()`       | `(error: Error) => void \| boolean`     | Return `true` to suppress default error output |
 
 Hooks execute in registration order.

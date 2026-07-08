@@ -14,6 +14,8 @@ type HookRegistrations = {
     ) => Hook;
     afterExecute: (fn: (result: unknown) => void | Promise<void>) => Hook;
     beforeExit: (fn: () => void | Promise<void>) => Hook;
+    onStart: (fn: () => void | Promise<void>) => Hook;
+    onStop: (fn: () => void | Promise<void>) => Hook;
     onError: (fn: (error: Error) => void | boolean | Promise<void | boolean>) => Hook;
 };
 
@@ -65,6 +67,14 @@ export class TerminalHookBuilder {
 
     beforeExit(): HookBuilder<() => void | Promise<void>> {
         return new HookBuilder(this._regs.beforeExit);
+    }
+
+    onStart(): HookBuilder<() => void | Promise<void>> {
+        return new HookBuilder(this._regs.onStart);
+    }
+
+    onStop(): HookBuilder<() => void | Promise<void>> {
+        return new HookBuilder(this._regs.onStop);
     }
 
     onError(): HookBuilder<(error: Error) => void | boolean | Promise<void | boolean>> {

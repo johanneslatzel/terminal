@@ -9,6 +9,21 @@ export interface Completion {
     partial: string;
 }
 
+function collectAllNames(commands: Command[]): string[] {
+    const names = new Set<string>();
+    for (const c of commands) {
+        names.add(c.name());
+        for (const alias of c.aliases()) {
+            names.add(alias);
+        }
+    }
+    return [...names];
+}
+
+function isShortFlagPrefix(s: string): boolean {
+    return s.startsWith('-') && !s.startsWith('--') && s.length === 2;
+}
+
 /**
  * Tab-completion engine powered by the command tree.
  * Walks the tree to find commands matching the current input
@@ -26,7 +41,7 @@ export class Completer {
         const trailingSpace = line.endsWith(' ');
 
         if (tokens.length === 0 && !trailingSpace) {
-            return { matches: this.tree.getRoots().map((c) => c.name()), partial: '' };
+            return { matches: collectAllNames(this.tree.getRoots()), partial: '' };
         }
 
         const partial = trailingSpace ? '' : tokens[tokens.length - 1]!;
@@ -36,7 +51,8 @@ export class Completer {
         let commands = this.tree.getRoots();
         for (const token of prefix) {
             if (token.startsWith('--')) continue;
-            const cmd = commands.find((command) => command.name() === token);
+            if (isShortFlagPrefix(token)) continue;
+            const cmd = commands.find((command) => command.matches(token));
             if (!cmd) return { matches: [], partial: line };
             lastMatched = cmd;
             if (!(cmd instanceof CommandContainer)) break;
@@ -46,18 +62,28 @@ export class Completer {
         if (lastMatched && !(lastMatched instanceof CommandContainer)) {
             const flagPartial = partial.startsWith('--') ? partial : partial === '' ? '--' : null;
             if (flagPartial !== null) {
-                const matches = lastMatched
-                    .definitions()
-                    .filter((a) => `--${a.name}`.startsWith(flagPartial))
-                    .map((a) => `--${a.name}`);
+                const matches: string[] = [];
+                for (const def of lastMatched.definitions()) {
+                    const candidate = `--${def.name}`;
+                    if (candidate.startsWith(flagPartial)) matches.push(candidate);
+                    for (const alias of def.aliases ?? []) {
+                        const aliasCandidate = alias.length === 1 ? `-${alias}` : `--${alias}`;
+                        if (aliasCandidate.startsWith(flagPartial)) matches.push(aliasCandidate);
+                    }
+                }
                 return { matches, partial };
             }
             return { matches: [], partial };
         }
 
-        const matches = commands
-            .filter((command) => command.name().startsWith(partial))
-            .map((c) => c.name());
+        const allNames = new Set<string>();
+        for (const command of commands) {
+            allNames.add(command.name());
+            for (const alias of command.aliases()) {
+                allNames.add(alias);
+            }
+        }
+        const matches = [...allNames].filter((name) => name.startsWith(partial));
 
         return { matches, partial };
     }

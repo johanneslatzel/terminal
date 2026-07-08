@@ -77,6 +77,16 @@ Without a readline (piped input), [`InvalidArgumentsError`](arguments/index.md#e
 
 > **Note:** Use `flag()` for booleans — `--verbose` → `true`, `--verbose false` → `false`, absent → `false`. Don't use `z.coerce.boolean()` — `Boolean("false")` is `true`. Define boolean schemas as `z.boolean()`.
 
+### Array arguments
+
+Arguments with an array schema (`z.array(...)`) auto-split on commas. Unquoted bare tokens after `--flag` are grouped onto the flag:
+
+```ts
+const fields = await args.require<string[]>('fields');
+// --fields id, name → ['id', 'name']
+// --fields one two   → ['one two']   (single array element, no comma)
+```
+
 ## Build a command tree
 
 Use [`container()`](commands/index.md#container) to group commands under a namespace:

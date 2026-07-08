@@ -11,7 +11,8 @@ function leftPad(str: string, len: number): string {
 /**
  * Render a global help listing for a set of root commands.
  * Each command is shown as `name   description`, names are
- * left-aligned to the longest command name.
+ * left-aligned to the longest command name. Aliases appear
+ * in parentheses after the name.
  */
 export function globalHelp(commands: Command[]): string {
     const maxNameLen = Math.max(...commands.map((c) => c.name().length), 0);
@@ -19,9 +20,17 @@ export function globalHelp(commands: Command[]): string {
     const lines: string[] = ['Commands:'];
     for (const cmd of commands) {
         const desc = cmd.description() ?? '';
-        lines.push(`  ${leftPad(cmd.name(), maxNameLen)}  ${desc}`);
+        const aliases = cmd.aliases();
+        const aliasStr = aliases.length > 0 ? ` (${aliases.join(', ')})` : '';
+        lines.push(`  ${leftPad(cmd.name(), maxNameLen)}${aliasStr}  ${desc}`);
     }
     return lines.join('\n');
+}
+
+function renderArgAliases(arg: CommandArgumentDefinition): string {
+    if (!arg.aliases || arg.aliases.length === 0) return '';
+    const parts = arg.aliases.map((a) => (a.length === 1 ? `-${a}` : `--${a}`));
+    return ` (${parts.join(', ')})`;
 }
 
 function renderCommandArgumentDefinitions(argDefs: CommandArgumentDefinition[]): string[] {
@@ -30,9 +39,10 @@ function renderCommandArgumentDefinitions(argDefs: CommandArgumentDefinition[]):
     const maxNameLen = Math.max(...argDefs.map((a) => a.name.length));
     for (const arg of argDefs) {
         const label = `--${arg.name}`;
+        const aliasStr = renderArgAliases(arg);
         const required = arg.required ? ' (required)' : '';
         const desc = arg.description ?? '';
-        lines.push(`  ${leftPad(label, maxNameLen + 2)}  ${desc}${required}`);
+        lines.push(`  ${leftPad(label, maxNameLen + 2)}${aliasStr}  ${desc}${required}`);
     }
     return lines;
 }
@@ -45,10 +55,12 @@ export function commandHelp(command: Command): string {
     const lines: string[] = [];
 
     const globalDesc = command.description();
+    const aliases = command.aliases();
+    const aliasStr = aliases.length > 0 ? ` (${aliases.join(', ')})` : '';
     if (globalDesc) {
-        lines.push(`${command.name()} - ${globalDesc}`);
+        lines.push(`${command.name()}${aliasStr} - ${globalDesc}`);
     } else {
-        lines.push(command.name());
+        lines.push(`${command.name()}${aliasStr}`);
     }
 
     lines.push(...renderCommandArgumentDefinitions(command.definitions()));
@@ -61,7 +73,9 @@ export function commandHelp(command: Command): string {
             lines.push('Subcommands:');
             for (const sub of subs) {
                 const desc = sub.description() ?? '';
-                lines.push(`  ${leftPad(sub.name(), maxNameLen)}  ${desc}`);
+                const subAliases = sub.aliases();
+                const subAliasStr = subAliases.length > 0 ? ` (${subAliases.join(', ')})` : '';
+                lines.push(`  ${leftPad(sub.name(), maxNameLen)}${subAliasStr}  ${desc}`);
             }
         }
     }
@@ -92,7 +106,7 @@ export function resolveCommand(commands: Command[], tokens: string[]): Command |
     let matched: Command | undefined;
 
     for (const token of tokens) {
-        matched = level.find((c) => c.name() === token);
+        matched = level.find((c) => c.matches(token));
         if (!matched) return undefined;
         if (matched instanceof CommandContainer) {
             const subs = matched.commands();
@@ -126,6 +140,7 @@ export class HelpCommand extends Command {
                 name: 'command',
                 description: 'Show help for a specific command',
                 required: false,
+                position: 0,
                 schema: z.string()
             }
         ]);
@@ -134,10 +149,11 @@ export class HelpCommand extends Command {
     async execute(ctx: CommandContext, args: CommandArguments): Promise<void> {
         const roots = ctx.terminal.getRootCommands();
         if (args.has('command')) {
-            const cmdName = await args.require<string>('command');
-            const cmd = roots.find((c) => c.name() === cmdName);
+            const cmdPath = await args.require<string>('command');
+            const tokens = cmdPath.split(/\s+/);
+            const cmd = resolveCommand(roots, tokens);
             if (!cmd) {
-                ctx.stdout.write(`Unknown command: ${cmdName}\n`);
+                ctx.stdout.write(`Unknown command: ${cmdPath}\n`);
                 return;
             }
             ctx.stdout.write(commandHelp(cmd) + '\n');

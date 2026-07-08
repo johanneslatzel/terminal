@@ -27,4 +27,6 @@ export type BeforeExecuteHook = TypedHook<
 >;
 export type AfterExecuteHook = TypedHook<[unknown], void | Promise<void>>;
 export type BeforeExitHook = TypedHook<[], void | Promise<void>>;
+export type OnStartHook = TypedHook<[], void | Promise<void>>;
+export type OnStopHook = TypedHook<[], void | Promise<void>>;
 export type OnErrorHook = TypedHook<[Error], void | boolean | Promise<void | boolean>>;
