@@ -14,6 +14,32 @@ input → tokenize → resolve → parse flags → execute → output → loop
 6. **Output** — command writes to `ctx.stdout`
 7. **Loop** — prompt again
 
+## Input management
+
+An internal input manager sits between readline and the rest of the system. It routes lines based on the current mode:
+
+| Mode      | What happens                                        |
+| --------- | --------------------------------------------------- |
+| `command` | Lines forwarded to the REPL command handler         |
+| `drop`    | Lines silently discarded, echo suppressed on TTY    |
+| `accept`  | Line resolved into a one-shot promise (visible or hidden input) |
+
+Ctrl+C during `accept` mode rejects the pending prompt with `InterruptedError` and restores the previous mode. The command is cancelled silently.
+
+### Mode transitions
+
+When a command finishes executing, the input manager returns to whatever mode was active before the command started. If a command calls [`args.require()`](arguments/index.md#require) or [`args.requireSecret()`](arguments/index.md#requiresecret), the manager switches to `accept` mode for the duration of the prompt, then restores the previous mode (typically `drop` during execution, or `command` outside it).
+
+### Echo control
+
+On TTY, the input manager controls character echoing via raw mode:
+
+- **Visible input** (`accept` + `acceptInput`) — raw mode off, characters echoed normally
+- **Hidden input** (`accept` + `acceptSecret`) — raw mode on, readline paused, input read character-by-character via [`readRawTerminal()`](https://github.com/johanneslatzel/terminal/blob/main/src/hidden-input.ts)
+- **Drop** — raw mode on, stdin paused, no echo at all
+
+On non-TTY, raw mode is unavailable. [`acceptSecret()`](arguments/index.md#requiresecret) falls back to visible input with echo disabled. Drop mode pauses the readline interface instead of toggling raw mode.
+
 ## Command tree
 
 Commands form a hierarchy. Each node extends [`Command`](commands/classes.md); namespace nodes extend `CommandContainer`.
@@ -61,6 +87,8 @@ The [`Completer`](https://github.com/johanneslatzel/terminal/blob/main/src/compl
 ## Error model
 
 Errors propagate to `handleError`. Registered [`onError`](hooks/index.md#error-handling) hooks run first — any returning `true` suppresses the error. Hook throw errors are caught individually; remaining hooks still run. Unconsumed errors print `Error: <message>` to stdout. The terminal loop never crashes.
+
+[`InterruptedError`](https://github.com/johanneslatzel/terminal/blob/main/src/errors.ts) is thrown when the user presses Ctrl+C during an interactive prompt. It is silently handled — no error output, no `onError` hooks fire.
 
 [`ParseError`](https://github.com/johanneslatzel/terminal/blob/main/src/input/parser.ts) is thrown during tokenization for malformed input (unclosed quotes, adjacent chars).
 

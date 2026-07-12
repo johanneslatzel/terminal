@@ -1,6 +1,6 @@
 {
     "name": "@johannes.latzel/terminal",
-    "version": "0.2.0",
+    "version": "0.3.0",
     "description": "Tree-structured TypeScript terminal/shell engine with automatic help and completion",
     "license": "MIT",
     "files": [
@@ -43,6 +43,7 @@
     },
     "scripts": {
         "prebuild": "rm -rf dist/",
+        "prepack": "npm run build",
         "build": "tsc -p tsconfig.build.json",
         "verify": "tsc --noEmit && eslint . --max-warnings 0 && vitest run --coverage",
         "lint": "eslint . --max-warnings 0",
@@ -62,6 +63,7 @@
         ]
     },
     "dependencies": {
+        "async-mutex": "^0.5.0",
         "zod": "^4.4.3"
     },
     "devDependencies": {

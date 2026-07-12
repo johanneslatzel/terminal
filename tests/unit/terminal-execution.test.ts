@@ -7,7 +7,7 @@ import { CommandTree } from '../../src/command-tree.js';
 import { Terminal } from '../../src/terminal.js';
 import { command, container } from '../../src/command-factory.js';
 import { Command, CommandContainer, CommandContext } from '../../src/types.js';
-import { CommandNotFoundError } from '../../src/errors.js';
+import { CommandNotFoundError, InterruptedError } from '../../src/errors.js';
 import { CommandArguments } from '../../src/command-arguments.js';
 import { z } from 'zod';
 
@@ -537,6 +537,148 @@ describe('Terminal', () => {
         expect(chunks.join('')).toContain('^C');
     });
 
+    it('SIGINT during argument prompt aborts command and allows new commands', async () => {
+        const executed: string[] = [];
+        const cmd = new (class extends Command {
+            constructor() {
+                super('req', 'Requires id', [
+                    { name: 'id', schema: z.string(), required: true }
+                ]);
+            }
+            async execute(_ctx: CommandContext, args: CommandArguments) {
+                const id = await args.require<string>('id');
+                executed.push(id);
+            }
+        })();
+        term.register(cmd);
+
+        const other = new (class extends Command {
+            constructor() {
+                super('other', 'Other command');
+            }
+            execute(ctx: CommandContext) {
+                ctx.stdout.write('ok\n');
+                executed.push('other');
+            }
+        })();
+        term.register(other);
+
+        await term.start();
+
+        // Type command without required arg → triggers interactive prompt
+        stdin.write('req\n');
+        await waitForOutput(chunks, (s) => s.includes('argument [id]:'));
+
+        // CTRL+C should abort the prompt
+        const rl = (term as unknown as { rl: NodeJS.EventEmitter }).rl;
+        rl.emit('SIGINT');
+        await new Promise((r) => setTimeout(r, 50));
+
+        // The command should not have executed with any value
+        expect(executed).not.toContain('req');
+        expect(executed).not.toContain('other');
+
+        // Now type a completely different command — it should work normally
+        stdin.write('other\n');
+        await waitForOutput(chunks, (s) => s.includes('ok'));
+        expect(executed).toContain('other');
+    });
+
+    it('command catches InterruptedError and continues gracefully', async () => {
+        const cmd = new (class extends Command {
+            constructor() {
+                super('catchy', 'Catches interrupt', [
+                    { name: 'id', schema: z.string(), required: true }
+                ]);
+            }
+            async execute(ctx: CommandContext, args: CommandArguments) {
+                try {
+                    await args.require<string>('id');
+                } catch (e) {
+                    if (e instanceof InterruptedError) {
+                        ctx.stdout.write('cancelled\n');
+                        return;
+                    }
+                    throw e;
+                }
+                ctx.stdout.write('done\n');
+            }
+        })();
+        term.register(cmd);
+        await term.start();
+
+        stdin.write('catchy\n');
+        await waitForOutput(chunks, (s) => s.includes('argument [id]:'));
+
+        const rl = (term as unknown as { rl: NodeJS.EventEmitter }).rl;
+        rl.emit('SIGINT');
+        await waitForOutput(chunks, (s) => s.includes('cancelled'));
+        expect(chunks.join('')).toContain('cancelled');
+        expect(chunks.join('')).not.toContain('done');
+    });
+
+    it('two required args, CTRL+C on first — second prompt never appears', async () => {
+        const executed: string[] = [];
+        const cmd = new (class extends Command {
+            constructor() {
+                super('twoarg', 'Two required args', [
+                    { name: 'first', schema: z.string(), required: true },
+                    { name: 'second', schema: z.string(), required: true }
+                ]);
+            }
+            async execute(_ctx: CommandContext, args: CommandArguments) {
+                const a = await args.require<string>('first');
+                const b = await args.require<string>('second');
+                executed.push(`${a}:${b}`);
+            }
+        })();
+        term.register(cmd);
+        await term.start();
+
+        stdin.write('twoarg\n');
+        await waitForOutput(chunks, (s) => s.includes('argument [first]:'));
+
+        const rl = (term as unknown as { rl: NodeJS.EventEmitter }).rl;
+        rl.emit('SIGINT');
+        await new Promise((r) => setTimeout(r, 50));
+
+        // Only the first prompt should have appeared
+        expect(chunks.join('')).toContain('argument [first]:');
+        expect(chunks.join('')).not.toContain('argument [second]:');
+        // Command should not have completed
+        expect(executed).toEqual([]);
+    });
+
+    it('double CTRL+C during argument prompt — shows ^C twice and re-prompts', async () => {
+        const cmd = new (class extends Command {
+            constructor() {
+                super('dc', 'Double cancel', [
+                    { name: 'x', schema: z.string(), required: true }
+                ]);
+            }
+            async execute(_ctx: CommandContext, args: CommandArguments) {
+                await args.require<string>('x');
+            }
+        })();
+        term.register(cmd);
+        await term.start();
+
+        stdin.write('dc\n');
+        await waitForOutput(chunks, (s) => s.includes('argument [x]:'));
+
+        const rl = (term as unknown as { rl: NodeJS.EventEmitter }).rl;
+        rl.emit('SIGINT');
+        await new Promise((r) => setTimeout(r, 10));
+        // Second CTRL+C at the command prompt — just re-prompts
+        rl.emit('SIGINT');
+        await new Promise((r) => setTimeout(r, 50));
+
+        const output = chunks.join('');
+        // Should see ^C at least twice
+        const cCount = (output.match(/\^C/g) || []).length;
+        expect(cCount).toBeGreaterThanOrEqual(2);
+    });
+
     it('close event stops the terminal', async () => {
         await term.start();
         expect((term as unknown as { running: boolean }).running).toBe(true);
@@ -585,7 +727,7 @@ describe('Terminal', () => {
 
     it('scoped help for nested subcommand via positional args', async () => {
         const list = container('list', 'List commands', [
-            command('verify', 'Verify a listing', [], async () => {})
+            command('verify', 'Verify a listing', async () => {})
         ]);
         const game = container('game', 'Game commands', [list]);
         term.register(game);
@@ -596,7 +738,7 @@ describe('Terminal', () => {
     });
 
     it('scoped help for deeply nested subcommand', async () => {
-        const verify = command('verify', 'Verify a listing', [], async () => {});
+        const verify = command('verify', 'Verify a listing', async () => {});
         const list = container('list', 'List commands', [verify]);
         const game = container('game', 'Game commands', [list]);
         term.register(game);
@@ -608,7 +750,7 @@ describe('Terminal', () => {
 
     it('scoped help via --command with nested path', async () => {
         const list = container('list', 'List commands', [
-            command('verify', 'Verify a listing', [], async () => {})
+            command('verify', 'Verify a listing', async () => {})
         ]);
         const game = container('game', 'Game commands', [list]);
         term.register(game);
@@ -1048,6 +1190,149 @@ describe('Terminal', () => {
         await term.start();
         await term.stop();
         expect(called).toBe(false);
+    });
+
+    // ------------------------------------------------------------------
+    // Concurrency / serialization
+    // ------------------------------------------------------------------
+
+    it('serializes line events during async command execution', async () => {
+        term.setPrompt('$ ');
+        let resume = () => {};
+        const gate = new Promise<void>((r) => {
+            resume = r;
+        });
+
+        const slowCmd = new (class extends Command {
+            async execute(ctx: import('../../src/types.js').CommandContext) {
+                ctx.stdout.write('first\n');
+                await gate;
+                ctx.stdout.write('last\n');
+            }
+        })('slow');
+        term.register(slowCmd);
+        await term.start();
+
+        // consume initial prompt from start()
+        chunks.length = 0;
+
+        stdin.write('slow\n');
+        // give handleLine time to acquire the mutex and reach the await gate
+        await new Promise((r) => setTimeout(r, 50));
+        stdin.write('\n'); // empty line — queued, not processed concurrently
+        await new Promise((r) => setTimeout(r, 20));
+        resume();
+        await new Promise((r) => setTimeout(r, 100));
+
+        const output = chunks.join('');
+        const firstIdx = output.indexOf('first');
+        const lastIdx = output.indexOf('last');
+        const promptIdx = output.indexOf('$ ');
+
+        expect(firstIdx).not.toBe(-1);
+        expect(lastIdx).not.toBe(-1);
+        expect(promptIdx).not.toBe(-1);
+        // all command output must appear before any prompt
+        expect(firstIdx).toBeLessThan(lastIdx);
+        expect(lastIdx).toBeLessThan(promptIdx);
+    });
+
+    it('drops inflight keystrokes when option is set', async () => {
+        let resume = () => {};
+        const gate = new Promise<void>((r) => {
+            resume = r;
+        });
+        const executed: string[] = [];
+        const ttyIn = Object.assign(new PassThrough(), {
+            isTTY: true,
+            setRawMode: () => {},
+            isRaw: false
+        }) as unknown as NodeJS.ReadStream;
+        const ttyOut = new PassThrough() as unknown as NodeJS.WriteStream;
+        const chunks: string[] = [];
+        ttyOut.on('data', (chunk: Buffer) => chunks.push(chunk.toString()));
+
+        const term = new Terminal({
+            stdin: ttyIn,
+            stdout: ttyOut,
+            prompt: '',
+            dropInflightKeystrokes: true
+        });
+        term.register(
+            new (class extends Command {
+                async execute() {
+                    await gate;
+                    executed.push('slow');
+                }
+            })('slow')
+        );
+        term.register(
+            new (class extends Command {
+                execute() {
+                    executed.push('other');
+                }
+            })('other')
+        );
+
+        await term.start();
+        chunks.length = 0;
+
+        ttyIn.write('slow\n');
+        await new Promise((r) => setTimeout(r, 20));
+        ttyIn.write('other\n');
+        await new Promise((r) => setTimeout(r, 20));
+        // emit a line directly on rl while InputManager is in drop mode to exercise the guard
+        const rl = (term as unknown as {
+            rl: { emit: (ev: string, line: string) => void };
+        }).rl;
+        rl.emit('line', 'direct-line');
+        resume();
+        await new Promise((r) => setTimeout(r, 100));
+
+        expect(executed).toEqual(['slow']);
+    });
+
+    it('drops inflight keystrokes in non-TTY mode', async () => {
+        let resume = () => {};
+        const gate = new Promise<void>((r) => {
+            resume = r;
+        });
+        const executed: string[] = [];
+        const stdIn = new PassThrough() as unknown as NodeJS.ReadStream;
+        const stdOut = new PassThrough() as unknown as NodeJS.WriteStream;
+
+        const term = new Terminal({
+            stdin: stdIn,
+            stdout: stdOut,
+            prompt: '',
+            dropInflightKeystrokes: true
+        });
+        term.register(
+            new (class extends Command {
+                async execute() {
+                    await gate;
+                    executed.push('slow');
+                }
+            })('slow')
+        );
+        term.register(
+            new (class extends Command {
+                execute() {
+                    executed.push('other');
+                }
+            })('other')
+        );
+
+        await term.start();
+
+        stdIn.write('slow\n');
+        await new Promise((r) => setTimeout(r, 20));
+        stdIn.write('other\n');
+        await new Promise((r) => setTimeout(r, 20));
+        resume();
+        await new Promise((r) => setTimeout(r, 100));
+
+        expect(executed).toEqual(['slow']);
     });
 });
 

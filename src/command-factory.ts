@@ -6,14 +6,48 @@ import type { z } from 'zod';
 /**
  * Create a leaf command from a name, description, argument definitions,
  * and a handler callback — no need to subclass `Command`.
+ *
+ * When the command has no arguments, omit `argDefs`:
+ * `command('greet', 'Say hello', handler)`.
  */
+export function command(
+    name: string,
+    description: string | undefined,
+    execute: (ctx: CommandContext, args: CommandArguments) => void | Promise<void>,
+    aliases?: string[]
+): Command;
 export function command(
     name: string,
     description: string | undefined,
     argDefs: CommandArgumentDefinition[],
     execute: (ctx: CommandContext, args: CommandArguments) => void | Promise<void>,
     aliases?: string[]
+): Command;
+export function command(
+    name: string,
+    description: string | undefined,
+    argDefsOrExecute:
+        | CommandArgumentDefinition[]
+        | ((ctx: CommandContext, args: CommandArguments) => void | Promise<void>),
+    executeOrAliases?:
+        ((ctx: CommandContext, args: CommandArguments) => void | Promise<void>) | string[],
+    aliases?: string[]
 ): Command {
+    let argDefs: CommandArgumentDefinition[];
+    let execute: (ctx: CommandContext, args: CommandArguments) => void | Promise<void>;
+
+    if (Array.isArray(argDefsOrExecute)) {
+        argDefs = argDefsOrExecute;
+        execute = executeOrAliases as (
+            ctx: CommandContext,
+            args: CommandArguments
+        ) => void | Promise<void>;
+    } else {
+        argDefs = [];
+        execute = argDefsOrExecute;
+        aliases = executeOrAliases as string[] | undefined;
+    }
+
     return new (class extends Command {
         constructor() {
             super(name, description, argDefs, aliases);

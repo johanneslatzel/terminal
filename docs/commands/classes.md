@@ -4,8 +4,6 @@ Use these when a command needs state, helper methods, or complex logic.
 
 ## Command
 
-See [`src/command-tree.ts`](https://github.com/johanneslatzel/terminal/blob/main/src/command-tree.ts) for the `Command` abstract class signature.
-
 The constructor accepts an optional 4th argument for aliases:
 `super(name, description?, argDefs?, aliases?)`.
 
@@ -32,11 +30,7 @@ class DeployCommand extends Command {
 }
 ```
 
-> **Note:** Uses `args.require<string>('name')` — see [Arguments](../arguments/index.md#require) for details. The old `requireString()` accessors do not exist.
-
 ## CommandContainer
-
-See [`src/command-tree.ts`](https://github.com/johanneslatzel/terminal/blob/main/src/command-tree.ts) for the `CommandContainer` class signature.
 
 Default `execute` prints detailed help for the container (description, arguments, subcommands). Override it to handle container-level invocation.
 

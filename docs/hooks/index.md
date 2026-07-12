@@ -20,8 +20,6 @@ h.dispose(); // unregister (idempotent)
 | `.beforeParse()`   | `(input: string) => string`             | Transform raw input before tokenizing          |
 | `.afterParse()`    | `(tokens: string[]) => string[]`        | Rewrite token list after parsing               |
 | `.onStart()`       | `() => void \| Promise<void>`           | Run before the first prompt on start           |
-| `.beforeParse()`   | `(input: string) => string`             | Transform raw input before tokenizing          |
-| `.afterParse()`    | `(tokens: string[]) => string[]`        | Rewrite token list after parsing               |
 | `.beforeExecute()` | `(command, ctx, args) => void \| false` | Cancel execution — return `false` to skip      |
 | `.afterExecute()`  | `(result: unknown) => void`             | Post-process after command returns             |
 | `.beforeExit()`    | `() => void \| Promise<void>`           | Run before cleanup when terminal stops         |
@@ -33,6 +31,8 @@ Hooks execute in registration order.
 ## Error handling
 
 Errors from any hook propagate to `handleError` (see [Architecture](../architecture.md#error-model)). `onError` hooks run first — the first returning `true` suppresses the error. If an `onError` callback itself throws, it's caught individually and remaining hooks still run. The terminal loop never crashes.
+
+Note: `InterruptedError` (Ctrl+C during interactive prompts) is handled before `onError` hooks run and does not trigger them.
 
 ## `dispose()` {#dispose}
 

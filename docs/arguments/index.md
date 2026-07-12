@@ -4,7 +4,7 @@ Wrapper for parsed `--name value` pairs with typed accessors, schema validation,
 
 Methods: `has()`, `raw()`, `require<T>()`, `requireSecret()`, `flag()`.
 
-All accessors require a matching [`CommandArgumentDefinition`](../commands/definitions.md). Missing definitions throw `InvalidArgumentsError`. See [`src/command-arguments.ts`](https://github.com/johanneslatzel/terminal/blob/main/src/command-arguments.ts) for the full `CommandArguments` class signature.
+All accessors require a matching [`CommandArgumentDefinition`](../commands/definitions.md). Missing definitions throw `InvalidArgumentsError`.
 
 ## `has(name)`
 
@@ -39,6 +39,8 @@ const nums = await args.require<number[]>('nums');
 Whitespace around commas is trimmed. Empty strings between commas are dropped.
 
 Missing required arguments prompt interactively (when a readline is available). Without a readline, throws `InvalidArgumentsError`.
+
+Pressing **Ctrl+C** during an interactive prompt cancels the command. The `require()` call throws an `InterruptedError`, which is silently handled by the terminal — no error message is printed, just `^C`.
 
 ## `requireSecret(name)` {#requiresecret}
 
@@ -75,9 +77,10 @@ If the argument definition has `secret: true`, the prompt uses hidden input — 
 
 ## Errors
 
-| Error                   | Description                                                                |
-| ----------------------- | -------------------------------------------------------------------------- |
+| Error                | Description                                                                |
+| -------------------- | -------------------------------------------------------------------------- |
 | `InvalidArgumentsError` | Missing required arg (no readline), unknown arg, schema validation failure |
+| `InterruptedError`   | User pressed Ctrl+C during an interactive prompt — command is cancelled    |
 
 ---
 

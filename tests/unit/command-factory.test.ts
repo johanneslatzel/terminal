@@ -10,7 +10,7 @@ import { z } from 'zod';
 describe('command', () => {
     it('creates a Command-like object with name and description', () => {
         const fn = vi.fn();
-        const cmd = command('hello', 'Says hello', [], fn);
+        const cmd = command('hello', 'Says hello', fn);
         expect(cmd.name()).toBe('hello');
         expect(cmd.description()).toBe('Says hello');
         expect(cmd.definitions()).toEqual([]);
@@ -18,7 +18,7 @@ describe('command', () => {
 
     it('calls the handler on execute', async () => {
         const fn = vi.fn();
-        const cmd = command('test', '', [], fn);
+        const cmd = command('test', '', fn);
         await cmd.execute({} as unknown as CommandContext, {} as unknown as CommandArguments);
         expect(fn).toHaveBeenCalledOnce();
     });
@@ -34,9 +34,24 @@ describe('command', () => {
 
     it('supports async handlers', async () => {
         const fn = vi.fn().mockResolvedValue(undefined);
-        const cmd = command('async', '', [], fn);
+        const cmd = command('async', '', fn);
         await cmd.execute({} as unknown as CommandContext, {} as unknown as CommandArguments);
         expect(fn).toHaveBeenCalledOnce();
+    });
+
+    it('works without argDefs (overload A)', () => {
+        const fn = vi.fn();
+        const cmd = command('noargs', 'No arguments', fn);
+        expect(cmd.name()).toBe('noargs');
+        expect(cmd.definitions()).toEqual([]);
+    });
+
+    it('works without argDefs and with aliases', () => {
+        const fn = vi.fn();
+        const cmd = command('noargs', 'No arguments', fn, ['n']);
+        expect(cmd.name()).toBe('noargs');
+        expect(cmd.aliases()).toEqual(['n']);
+        expect(cmd.definitions()).toEqual([]);
     });
 });
 
@@ -49,7 +64,7 @@ describe('container', () => {
     });
 
     it('adds children when provided', () => {
-        const child = command('child', '', [], vi.fn());
+        const child = command('child', '', vi.fn());
         const ns = container('parent', '', [child]);
         expect(ns.commands()).toHaveLength(1);
         expect(ns.commands()[0]!.name()).toBe('child');
@@ -114,24 +129,24 @@ describe('position validation', () => {
     });
 
     it('accepts commands with no positional args', () => {
-        expect(() => command('none', '', [], vi.fn())).not.toThrow();
+        expect(() => command('none', '', vi.fn())).not.toThrow();
         expect(() => command('none', '', [arg('a', '', z.string())], vi.fn())).not.toThrow();
     });
 });
 
 describe('command name validation', () => {
     it('rejects empty command name', () => {
-        expect(() => command('', 'desc', [], vi.fn())).toThrow(InvalidArgumentsError);
-        expect(() => command('', 'desc', [], vi.fn())).toThrow('Command name cannot be empty');
+        expect(() => command('', 'desc', vi.fn())).toThrow(InvalidArgumentsError);
+        expect(() => command('', 'desc', vi.fn())).toThrow('Command name cannot be empty');
     });
 
     it('rejects command name with spaces', () => {
-        expect(() => command('two words', 'desc', [], vi.fn())).toThrow(InvalidArgumentsError);
-        expect(() => command('two words', 'desc', [], vi.fn())).toThrow('whitespace');
+        expect(() => command('two words', 'desc', vi.fn())).toThrow(InvalidArgumentsError);
+        expect(() => command('two words', 'desc', vi.fn())).toThrow('whitespace');
     });
 
     it('rejects command name with tabs', () => {
-        expect(() => command('tab\tname', 'desc', [], vi.fn())).toThrow(InvalidArgumentsError);
+        expect(() => command('tab\tname', 'desc', vi.fn())).toThrow(InvalidArgumentsError);
     });
 
     it('rejects empty name via Command subclass', () => {
@@ -157,6 +172,6 @@ describe('command name validation', () => {
     });
 
     it('accepts valid command name', () => {
-        expect(() => command('valid', 'desc', [], vi.fn())).not.toThrow();
+        expect(() => command('valid', 'desc', vi.fn())).not.toThrow();
     });
 });

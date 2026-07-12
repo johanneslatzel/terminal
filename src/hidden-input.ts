@@ -1,42 +1,4 @@
-import * as readline from 'node:readline';
 import { StringDecoder } from 'node:string_decoder';
-
-type ReadlineWithStreams = readline.Interface & {
-    input: NodeJS.ReadStream;
-    output: NodeJS.WriteStream;
-};
-
-/**
- * Temporarily suspend a readline interface to take over the input stream
- * in raw mode.  Save active `'data'` listeners, pause the readline,
- * and remove all listeners so hidden input can be read directly.
- *
- * Restore everything by calling the returned {@link suspendReadline#resume} function
- * (which also calls `rl.prompt()` to redraw the prompt).
- *
- * @param rl - Active readline interface whose input/output streams to borrow.
- * @returns `input` and `output` streams for raw reading, plus a
- *   `resume` function that restores readline to its previous state.
- */
-export function suspendReadline(rl: readline.Interface): {
-    input: NodeJS.ReadStream;
-    output: NodeJS.WriteStream;
-    resume: () => void;
-} {
-    const { input, output } = rl as unknown as ReadlineWithStreams;
-    const dataListeners = input.rawListeners('data') as ((...args: unknown[]) => void)[];
-    rl.pause();
-    input.removeAllListeners('data');
-    return {
-        input,
-        output,
-        resume: () => {
-            for (const listener of dataListeners) input.on('data', listener);
-            rl.resume();
-            rl.prompt();
-        }
-    };
-}
 
 /**
  * Read a single line of input from a raw-mode terminal.

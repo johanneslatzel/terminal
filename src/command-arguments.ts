@@ -1,7 +1,6 @@
-import * as readline from 'node:readline';
 import { z } from 'zod';
 import { InvalidArgumentsError } from './errors.js';
-import { readRawTerminal, suspendReadline } from './hidden-input.js';
+import { InputManager } from './input-manager.js';
 
 /** Describes a single command-line argument (`--name value`). */
 export interface CommandArgumentDefinition {
@@ -29,7 +28,7 @@ export interface CommandArgumentDefinition {
  * Wraps a parsed argument record (`--name value` pairs) and provides
  * typed accessors that validate and coerce values via the argument's
  * {@link CommandArgumentDefinition} zod schema. When an argument is
- * missing and a readline interface is available, the accessor prompts
+ * missing and an InputManager is available, the accessor prompts
  * the user interactively.
  *
  * Every `require*` accessor requires a matching
@@ -49,15 +48,15 @@ export interface CommandArgumentDefinition {
  */
 export class CommandArguments {
     /**
-     * @param record  - Parsed `--name value` pairs.
-     * @param rl      - Readline interface for interactive prompting, or `null`
-     *                  to disable prompting and throw on missing args.
-     * @param argDefs - Optional argument definitions used for schema-based
-     *                  validation. Looked up by name per accessor call.
+     * @param record      - Parsed `--name value` pairs.
+     * @param inputManager - InputManager for interactive prompting, or `null`
+     *                       to disable prompting and throw on missing args.
+     * @param argDefs     - Optional argument definitions used for schema-based
+     *                      validation. Looked up by name per accessor call.
      */
     constructor(
         private record: Record<string, string>,
-        private rl: readline.Interface | null,
+        private inputManager: InputManager | null,
         private argDefs?: CommandArgumentDefinition[]
     ) {}
 
@@ -91,7 +90,7 @@ export class CommandArguments {
      * For boolean flags, use {@link flag} instead.
      *
      * If the argument was not provided on the command line, prompts
-     * the user interactively (when a readline interface is available).
+     * the user interactively (when an InputManager is available).
      *
      * @example
      * ```ts
@@ -103,7 +102,7 @@ export class CommandArguments {
      * @param name - Argument name (without `--` prefix).
      * @throws {InvalidArgumentsError} When no definition exists for
      *   `name`, when schema validation fails, or when the argument is
-     *   missing and no readline interface is available.
+     *   missing and no InputManager is available.
      */
     async require<T = unknown>(name: string): Promise<T> {
         const def = this.requireDef(name);
@@ -137,7 +136,7 @@ export class CommandArguments {
      * @param name - Argument name (without `--` prefix).
      * @throws {InvalidArgumentsError} When no definition exists for
      *   `name`, when schema validation fails, or when the argument is
-     *   missing and no readline interface is available.
+     *   missing and no InputManager is available.
      */
     async requireSecret(name: string): Promise<string> {
         const raw = await this.resolveSecret(name);
@@ -199,33 +198,17 @@ export class CommandArguments {
         if (name in this.record) {
             return this.record[name]!;
         }
-        if (this.rl) {
-            return useSecret ? await this.promptSecret(name) : await this.promptRequired(name);
+        if (this.inputManager) {
+            const prompt = `argument [${name}]: `;
+            return useSecret
+                ? await this.inputManager.acceptSecret(prompt)
+                : await this.inputManager.acceptInput(prompt);
         }
         throw new InvalidArgumentsError(`Argument "${name}" is required but not provided`);
     }
 
     private async resolveSecret(name: string): Promise<string> {
         return this.resolve(name, true);
-    }
-
-    private promptRequired(name: string): Promise<string> {
-        return new Promise((resolve) => {
-            this.rl!.question(`argument [${name}]: `, resolve);
-        });
-    }
-
-    private async promptSecret(name: string): Promise<string> {
-        const rl = this.rl!;
-        if (!((rl as any).input as NodeJS.ReadStream).isTTY) {
-            return this.promptRequired(name);
-        }
-        const { input, output, resume } = suspendReadline(rl);
-        try {
-            return await readRawTerminal(input, output, `argument [${name}]: `);
-        } finally {
-            resume();
-        }
     }
 
     private requireDef(name: string): CommandArgumentDefinition {

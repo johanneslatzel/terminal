@@ -179,4 +179,11 @@ export interface TerminalOptions {
      * `saveHistory()` writes to it.
      */
     historyPath?: string;
+    /**
+     * When `true` (TTY only), suppresses echo and discards input that arrives
+     * while a command is executing.  Useful for interactive sessions where
+     * mid-execution keystrokes should be silently ignored.  Default `false`
+     * preserves all input (queued and processed after the command finishes).
+     */
+    dropInflightKeystrokes?: boolean;
 }

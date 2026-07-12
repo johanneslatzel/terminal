@@ -1,19 +1,20 @@
 import * as readline from 'node:readline';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
+import { Mutex } from 'async-mutex';
 import { Command, type CommandContext, type TerminalOptions } from './types.js';
 import { CommandTree } from './command-tree.js';
 import { tokenize } from './input/parser.js';
 import { parseFlags } from './input/args-parser.js';
 import { CommandArguments } from './command-arguments.js';
 import { Completer } from './completion/completer.js';
-import { CommandNotFoundError } from './errors.js';
+import { CommandNotFoundError, InterruptedError } from './errors.js';
 import { HelpCommand } from './commands/help.js';
 import { ExitCommand } from './commands/exit.js';
 import { ClearCommand } from './commands/clear.js';
 import { Hook } from './hook.js';
 import { TerminalHookBuilder } from './terminal-hook-builder.js';
-import { readRawTerminal, suspendReadline } from './hidden-input.js';
+import { InputManager } from './input-manager.js';
 import {
     TypedHook,
     BeforeParseHook,
@@ -51,12 +52,15 @@ export class Terminal {
     private _onStopHooks: OnStopHook[] = [];
     private _onErrorHooks: OnErrorHook[] = [];
     private _history: string[] = [];
+    private mutex = new Mutex();
     private running = false;
+    private inputManager: InputManager;
     private static readonly DEFAULT_OPTIONS = {
         prompt: '> ',
         stdin: process.stdin,
         stdout: process.stdout,
-        historySize: 100
+        historySize: 100,
+        dropInflightKeystrokes: false
     };
 
     private options: TerminalOptions & {
@@ -64,6 +68,7 @@ export class Terminal {
         stdin: NodeJS.ReadStream;
         stdout: NodeJS.WriteStream;
         historySize: number;
+        dropInflightKeystrokes: boolean;
     };
     private ctx: CommandContext;
     private ctxState: Record<string, unknown> = {};
@@ -75,6 +80,14 @@ export class Terminal {
     constructor(options?: TerminalOptions) {
         this.options = { ...Terminal.DEFAULT_OPTIONS, ...options };
         this.tree = new CommandTree();
+        this.inputManager = new InputManager(
+            this.options.stdin,
+            this.options.stdout,
+            (line) => this.handleLine(line),
+            () => {
+                if (this.running) void this.stop();
+            }
+        );
         this.ctx = this.createContext();
         this.registerBuiltins();
     }
@@ -153,7 +166,7 @@ export class Terminal {
      */
     setPrompt(prompt: string): void {
         this.options.prompt = prompt;
-        this.rl?.setPrompt(prompt);
+        this.inputManager?.setPrompt(prompt);
     }
 
     /**
@@ -173,23 +186,10 @@ export class Terminal {
      * @throws {Error} If the terminal has not been started (no readline).
      */
     async questionHidden(prompt: string, mask: string = '*'): Promise<string> {
-        const rl = this.rl;
-        if (!rl) {
+        if (!this.inputManager.getReadline()) {
             throw new Error('Terminal not started');
         }
-
-        if (!this.options.stdin.isTTY) {
-            return new Promise((resolve) => {
-                rl.question(prompt, resolve);
-            });
-        }
-
-        const { input, output, resume } = suspendReadline(rl);
-        try {
-            return await readRawTerminal(input, output, prompt, mask);
-        } finally {
-            resume();
-        }
+        return this.inputManager.acceptSecret(prompt, mask);
     }
 
     /**
@@ -263,11 +263,12 @@ export class Terminal {
         this.running = true;
 
         this.rl = this.createReadline();
-        this.bindEvents(this.rl);
+        this.inputManager.start(this.rl);
+
         for (const hook of this._onStartHooks) {
             await hook.exec();
         }
-        this.rl.prompt();
+        this.inputManager.prompt();
     }
 
     private createReadline(): readline.Interface {
@@ -293,28 +294,6 @@ export class Terminal {
         return readline.createInterface(rlOptions);
     }
 
-    private bindEvents(rl: readline.Interface): void {
-        rl.on('line', (line: string) => {
-            void this.handleLine(line);
-        });
-
-        rl.on('SIGINT', () => {
-            this.options.stdout.write('^C\n');
-            rl.prompt();
-        });
-
-        rl.on('close', () => {
-            if (this.running) {
-                this.options.stdout.write('\n');
-                void this.stop();
-            }
-        });
-
-        rl.on('error', (err: Error) => {
-            this.options.stdout.write(`Readline error: ${err.message}\n`);
-        });
-    }
-
     /**
      * Stop the terminal loop. Closes the readline interface.
      */
@@ -324,9 +303,8 @@ export class Terminal {
         for (const hook of this._beforeExitHooks) {
             await hook.exec();
         }
-        this.rl!.close();
+        this.inputManager.stop();
         this.rl = null;
-        this.options.stdin.pause();
         for (const hook of this._onStopHooks) {
             await hook.exec();
         }
@@ -344,34 +322,50 @@ export class Terminal {
      * - Trims to `historySize` after insertion.
      *
      * This is the only place `_history` gets new entries at runtime.
+     *
+     * Concurrency is serialised by an async mutex.  When
+     * `dropInflightKeystrokes` is enabled, the InputManager switches to drop
+     * mode at the start of execution so that any keystrokes arriving while the
+     * command runs are silently discarded.
      */
     private async handleLine(input: string): Promise<void> {
-        try {
-            const tokens = await this.processInput(input);
-            if (tokens.length === 0) {
-                this.rl?.prompt();
-                return;
+        await this.mutex.runExclusive(async () => {
+            if (this.options.dropInflightKeystrokes) {
+                this.inputManager.drop();
             }
 
-            const resolved = this.resolveCommand(tokens);
-            const record = parseFlags(resolved.args, resolved.command.definitions());
-            const args = new CommandArguments(record, this.rl, resolved.command.definitions());
-            await this.executeWithHooks(resolved.command, args);
-        } catch (error) {
-            await this.handleError(error);
-        } finally {
-            if (input.length > 0 && input !== this._history.at(-1)) {
-                const idx = this._history.indexOf(input);
-                if (idx !== -1) this._history.splice(idx, 1);
-                this._history.push(input);
-                if (this._history.length > this.options.historySize) {
-                    this._history = this._history.slice(-this.options.historySize);
+            try {
+                const tokens = await this.processInput(input);
+                if (tokens.length === 0) {
+                    this.inputManager.prompt();
+                    return;
+                }
+
+                const resolved = this.resolveCommand(tokens);
+                const record = parseFlags(resolved.args, resolved.command.definitions());
+                const args = new CommandArguments(
+                    record,
+                    this.inputManager,
+                    resolved.command.definitions()
+                );
+                await this.executeWithHooks(resolved.command, args);
+            } catch (error) {
+                await this.handleError(error);
+            } finally {
+                if (input.length > 0 && input !== this._history.at(-1)) {
+                    const idx = this._history.indexOf(input);
+                    if (idx !== -1) this._history.splice(idx, 1);
+                    this._history.push(input);
+                    if (this._history.length > this.options.historySize) {
+                        this._history = this._history.slice(-this.options.historySize);
+                    }
+                }
+                if (this.running) {
+                    this.inputManager.restoreCommandMode();
+                    this.inputManager.prompt();
                 }
             }
-            if (this.running) {
-                this.rl?.prompt();
-            }
-        }
+        });
     }
 
     private async processInput(input: string): Promise<string[]> {
@@ -416,6 +410,10 @@ export class Terminal {
     }
 
     private async handleError(error: unknown): Promise<void> {
+        if (error instanceof InterruptedError) {
+            return;
+        }
+
         for (const hook of this._onErrorHooks) {
             try {
                 if ((await hook.exec(error as Error)) === true) return;

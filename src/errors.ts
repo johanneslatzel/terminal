@@ -21,6 +21,14 @@ export class InvalidArgumentsError extends Error {
     }
 }
 
+/** Thrown when the user presses Ctrl+C during an interactive prompt. */
+export class InterruptedError extends Error {
+    constructor() {
+        super('Interrupted');
+        this.name = 'InterruptedError';
+    }
+}
+
 /** Thrown when input cannot be tokenized (e.g. unclosed quotes). */
 export class ParseError extends Error {
     constructor(message: string) {

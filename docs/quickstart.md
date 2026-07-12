@@ -18,14 +18,14 @@ Type `help` to list builtins and `exit` to quit.
 
 ## Add a command
 
-[`command()`](commands/index.md#command) defines a leaf command and returns a `Command` for [`terminal.register()`](terminal/index.md#register):
+[`command()`](commands/index.md#command) defines a leaf command and returns a `Command` for `terminal.register()`:
 
 ```ts
 import { Terminal, command } from '@johannes.latzel/terminal';
 
 const term = new Terminal();
 term.register(
-    command('greet', 'Say hello', [], (ctx) => {
+    command('greet', 'Say hello', (ctx) => {
         ctx.stdout.write('Hello, World!\n');
     })
 );
@@ -97,8 +97,8 @@ import { Terminal, command, container } from '@johannes.latzel/terminal';
 const term = new Terminal();
 term.register(
     container('config', 'Configuration', [
-        command('get', 'Get a value', [], (ctx) => ctx.stdout.write('value\n')),
-        command('set', 'Set a value', [], (ctx) => ctx.stdout.write('ok\n'))
+        command('get', 'Get a value', (ctx) => ctx.stdout.write('value\n')),
+        command('set', 'Set a value', (ctx) => ctx.stdout.write('ok\n'))
     ])
 );
 term.start();

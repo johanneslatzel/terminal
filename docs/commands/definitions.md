@@ -12,8 +12,6 @@
 | `secret`      | When `true`, missing arguments prompt with hidden input (keystrokes echo as `*`)                    |
 | `position`    | 0-based index for bare-token (positional) arguments. Must form a contiguous sequence starting at 0. |
 
-See [`src/command-arguments.ts`](https://github.com/johanneslatzel/terminal/blob/main/src/command-arguments.ts) for the `CommandArgumentDefinition` interface.
-
 ## `arg()` factory {#arg}
 
 ```ts
@@ -45,11 +43,9 @@ Positions are consumed in index order. Duplicate or non-contiguous positions thr
 
 - **Strings** — `z.string()`. Use `.min(1)`, `.email()`, etc.
 - **Numbers** — `z.coerce.number()` (coerces from string input)
-- **Booleans** — `z.boolean()` (read with [`flag()`](../arguments/index.md#flag) — don't use `z.coerce.boolean()`)
+- **Booleans** — `z.boolean()` (read with [`flag()`](../arguments/index.md#flag))
 - **Enums** — `z.enum(['a', 'b', 'c'])`
 - **Arrays** — `z.array(z.string())`, `z.array(z.coerce.number())`. Raw input is auto-split on commas before validation (see [`require<T>()`](../arguments/index.md#require)).
-
-See [Arguments](../arguments/index.md) for runtime reading.
 
 ---
 

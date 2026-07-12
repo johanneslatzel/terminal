@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import * as readline from 'node:readline';
 import { PassThrough } from 'node:stream';
 import { z } from 'zod';
 import { CommandArguments } from '../../src/command-arguments.js';
+import { InputManager } from '../../src/input-manager.js';
 
 import { InvalidArgumentsError } from '../../src/errors.js';
 import type { CommandArgumentDefinition } from '../../src/command-arguments.js';
@@ -19,12 +19,33 @@ function makeArgs(record: Record<string, string>): CommandArguments {
     return new CommandArguments(record, null, basicDefs);
 }
 
-function makeMockRl(): readline.Interface {
-    return {
-        question: (query: string, cb: (answer: string) => void) => {
-            cb('mock-answer');
-        }
-    } as unknown as readline.Interface;
+function makeMockInputManager(_answer = 'mock-answer'): InputManager {
+    const stdin = new PassThrough() as unknown as NodeJS.ReadStream;
+    const stdout = new PassThrough() as unknown as NodeJS.WriteStream;
+    return new InputManager(stdin, stdout, () => {});
+}
+
+function makeAnsweringInputManager(
+    answers: Record<string, string>
+): InputManager {
+    const stdin = new PassThrough() as unknown as NodeJS.ReadStream;
+    const stdout = new PassThrough() as unknown as NodeJS.WriteStream;
+    const im = new InputManager(stdin, stdout, () => {});
+
+    let callIndex = 0;
+    const values = Object.values(answers);
+
+    // Override acceptInput to return predetermined answers
+    im.acceptInput = (_prompt: string, _echo?: boolean) => {
+        const idx = callIndex++;
+        return Promise.resolve(values[idx % values.length] ?? 'mock-answer');
+    };
+    im.acceptSecret = (_prompt: string, _mask?: string) => {
+        const idx = callIndex++;
+        return Promise.resolve(values[idx % values.length] ?? 'mock-answer');
+    };
+
+    return im;
 }
 
 describe('CommandArguments', () => {
@@ -65,7 +86,7 @@ describe('CommandArguments', () => {
             expect(await makeArgs({ name: 'alice' }).require<string>('name')).toBe('alice');
         });
 
-        it('throws when key missing and no readline', async () => {
+        it('throws when key missing and no input manager', async () => {
             await expect(makeArgs({}).require<string>('name')).rejects.toThrow(
                 InvalidArgumentsError
             );
@@ -310,7 +331,7 @@ describe('CommandArguments', () => {
         });
     });
 
-    describe('prompting (with rl)', () => {
+    describe('prompting (with InputManager)', () => {
         const promptDefs: CommandArgumentDefinition[] = [
             { name: 'name', schema: z.string() },
             { name: 'count', schema: z.coerce.number() },
@@ -320,83 +341,52 @@ describe('CommandArguments', () => {
         ];
 
         it('prompts for missing string and returns answer', async () => {
-            const args = new CommandArguments({}, makeMockRl(), promptDefs);
+            const im = makeAnsweringInputManager({ name: 'mock-answer' });
+            const args = new CommandArguments({}, im, promptDefs);
             expect(await args.require<string>('name')).toBe('mock-answer');
         });
 
         it('prompts for missing number and returns parsed answer', async () => {
-            const rl = {
-                question: (_query: string, cb: (a: string) => void) => cb('42')
-            } as unknown as readline.Interface;
-            const args = new CommandArguments({}, rl, promptDefs);
+            const im = makeAnsweringInputManager({ count: '42' });
+            const args = new CommandArguments({}, im, promptDefs);
             expect(await args.require<number>('count')).toBe(42);
         });
 
-        it('returns false for missing boolean even with rl (flag default)', async () => {
-            const rl = {
-                question: (_query: string, cb: (a: string) => void) => cb('should-not-be-called')
-            } as unknown as readline.Interface;
-            const args = new CommandArguments({}, rl, promptDefs);
+        it('returns false for missing boolean even with InputManager (flag default)', async () => {
+            const im = makeMockInputManager();
+            const args = new CommandArguments({}, im, promptDefs);
             expect(await args.flag('flag')).toBe(false);
         });
 
         it('prompts for missing enum and returns parsed answer', async () => {
-            const rl = {
-                question: (_query: string, cb: (a: string) => void) => cb('large')
-            } as unknown as readline.Interface;
-            const args = new CommandArguments({}, rl, promptDefs);
+            const im = makeAnsweringInputManager({ size: 'large' });
+            const args = new CommandArguments({}, im, promptDefs);
             expect(await args.require<string>('size')).toBe('large');
         });
 
         it('throws when prompt returns value that fails schema', async () => {
-            const rl = {
-                question: (_query: string, cb: (a: string) => void) => cb('not-an-email')
-            } as unknown as readline.Interface;
-            const args = new CommandArguments({}, rl, promptDefs);
+            const im = makeAnsweringInputManager({ email: 'not-an-email' });
+            const args = new CommandArguments({}, im, promptDefs);
             await expect(args.require<string>('email')).rejects.toThrow(InvalidArgumentsError);
         });
 
-        it('calls question for each missing argument in sequence', async () => {
-            const calls: string[] = [];
-            const rl = {
-                question: (query: string, cb: (a: string) => void) => {
-                    calls.push(query);
-                    cb('answer-' + calls.length);
-                }
-            } as unknown as readline.Interface;
-            const args = new CommandArguments({}, rl, promptDefs);
+        it('calls acceptInput for each missing argument in sequence', async () => {
+            const callCount = { value: 0 };
+            const im = makeMockInputManager();
+            im.acceptInput = (_prompt: string, _echo?: boolean) => {
+                callCount.value++;
+                return Promise.resolve('answer-' + callCount.value);
+            };
+            const args = new CommandArguments({}, im, promptDefs);
             const a = await args.require<string>('name');
             const b = await args.require<string>('name');
-            expect(calls).toHaveLength(2);
+            expect(callCount.value).toBe(2);
             expect(a).toBe('answer-1');
             expect(b).toBe('answer-2');
         });
     });
 
     describe('requireSecret', () => {
-        function makeTtyRl(): { rl: readline.Interface; input: PassThrough; output: PassThrough } {
-            const ttyInput = Object.assign(new PassThrough(), {
-                isTTY: true,
-                isRaw: false,
-                setRawMode: () => {}
-            });
-            // Simulate readline's internal data listener
-            ttyInput.on('data', () => {});
-            const ttyOutput = new PassThrough();
-            return {
-                rl: {
-                    input: ttyInput,
-                    output: ttyOutput,
-                    pause: () => {},
-                    resume: () => {},
-                    prompt: () => {},
-                    question: (_q: string, cb: (a: string) => void) => cb('visible-fallback')
-                } as unknown as readline.Interface,
-                input: ttyInput,
-                output: ttyOutput
-            };
-        }
-
         const secretDefs: CommandArgumentDefinition[] = [
             { name: 'password', schema: z.string(), secret: true }
         ];
@@ -407,37 +397,26 @@ describe('CommandArguments', () => {
         });
 
         it('require() uses hidden prompt when secret:true and arg missing', async () => {
-            const { rl, input } = makeTtyRl();
-            const args = new CommandArguments({}, rl, secretDefs);
-            const promise = args.require<string>('password');
-            input.write('s3cret\n');
-            const result = await promise;
-            expect(result).toBe('s3cret');
+            const im = makeAnsweringInputManager({ password: 's3cret' });
+            const args = new CommandArguments({}, im, secretDefs);
+            expect(await args.require<string>('password')).toBe('s3cret');
         });
 
         it('requireSecret prompts with hidden input', async () => {
-            const { rl, input } = makeTtyRl();
-            const args = new CommandArguments({}, rl, secretDefs);
-            const promise = args.requireSecret('password');
-            input.write('hunter2\n');
-            const result = await promise;
-            expect(result).toBe('hunter2');
+            const im = makeAnsweringInputManager({ password: 'hunter2' });
+            const args = new CommandArguments({}, im, secretDefs);
+            expect(await args.requireSecret('password')).toBe('hunter2');
         });
 
-        it('requireSecret falls back to visible prompt when stdin not a TTY', async () => {
-            const rl = {
-                input: Object.assign(new PassThrough(), {
-                    isTTY: false,
-                    isRaw: false,
-                    setRawMode: () => {}
-                }),
-                output: new PassThrough(),
-                pause: () => {},
-                resume: () => {},
-                prompt: () => {},
-                question: (_q: string, cb: (a: string) => void) => cb('visible-answer')
-            } as unknown as readline.Interface;
-            const args = new CommandArguments({}, rl, secretDefs);
+        it('requireSecret falls back to acceptInput when InputManager has no TTY', async () => {
+            // Use a non-TTY stdin so acceptSecret falls back to acceptInput
+            const nonTtyStdin = new PassThrough() as unknown as NodeJS.ReadStream;
+            const stdout = new PassThrough() as unknown as NodeJS.WriteStream;
+            const im = new InputManager(nonTtyStdin, stdout, () => {});
+            im.acceptInput = (_prompt: string, _echo?: boolean) => {
+                return Promise.resolve('visible-answer');
+            };
+            const args = new CommandArguments({}, im, secretDefs);
             const result = await args.requireSecret('password');
             expect(result).toBe('visible-answer');
         });
@@ -455,7 +434,7 @@ describe('CommandArguments', () => {
             await expect(args.requireSecret('pw')).rejects.toThrow(InvalidArgumentsError);
         });
 
-        it('throws when missing and no readline', async () => {
+        it('throws when missing and no input manager', async () => {
             const args = new CommandArguments({}, null, secretDefs);
             await expect(args.requireSecret('password')).rejects.toThrow(
                 'Argument "password" is required but not provided'
