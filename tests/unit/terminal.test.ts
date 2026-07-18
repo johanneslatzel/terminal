@@ -625,4 +625,392 @@ describe('Completer', () => {
         expect(matches).toContain('set');
         expect(matches).toContain('s');
     });
+
+    it('excludes already-used --flags from completion', () => {
+        const tree = new CommandTree();
+        const cmd = new (class extends Command {
+            async execute() {}
+        })('create', 'Create', [
+            { name: 'username', schema: z.string() },
+            { name: 'password', schema: z.string() },
+            { name: 'role', schema: z.string() }
+        ]);
+        tree.add(cmd);
+
+        const completer = new Completer(tree);
+        const { matches } = completer.complete('create --username foo --');
+        expect(matches).toEqual(['--password', '--role']);
+    });
+
+    it('excludes already-used short aliases from completion', () => {
+        const tree = new CommandTree();
+        const cmd = new (class extends Command {
+            async execute() {}
+        })('create', 'Create', [
+            { name: 'username', schema: z.string(), aliases: ['u'] },
+            { name: 'password', schema: z.string(), aliases: ['p'] },
+            { name: 'role', schema: z.string(), aliases: ['r'] }
+        ]);
+        tree.add(cmd);
+
+        const completer = new Completer(tree);
+        const { matches } = completer.complete('create -u foo --');
+        expect(matches).toEqual(['--password', '--role']);
+    });
+
+    it('excludes already-used --long-alias from completion', () => {
+        const tree = new CommandTree();
+        const cmd = new (class extends Command {
+            async execute() {}
+        })('build', 'Build', [
+            { name: 'output', schema: z.string(), aliases: ['outfile', 'o'] }
+        ]);
+        tree.add(cmd);
+
+        const completer = new Completer(tree);
+        const { matches } = completer.complete('build --outfile out.txt --');
+        expect(matches).toEqual([]);
+    });
+
+    it('shows enum hints in flag completion for z.enum schema', () => {
+        const tree = new CommandTree();
+        const cmd = new (class extends Command {
+            async execute() {}
+        })('create', 'Create', [
+            { name: 'role', schema: z.enum(['admin', 'user', 'guest']) }
+        ]);
+        tree.add(cmd);
+
+        const completer = new Completer(tree);
+        const { matches } = completer.complete('create --');
+        expect(matches).toEqual(['--role [admin|user|guest]']);
+    });
+
+    it('shows enum hints when partially typing flag name', () => {
+        const tree = new CommandTree();
+        const cmd = new (class extends Command {
+            async execute() {}
+        })('create', 'Create', [
+            { name: 'role', schema: z.enum(['admin', 'user', 'guest']) }
+        ]);
+        tree.add(cmd);
+
+        const completer = new Completer(tree);
+        const { matches } = completer.complete('create --ro');
+        expect(matches).toEqual(['--role [admin|user|guest]']);
+    });
+
+    it('does not show enum hints for non-enum schemas', () => {
+        const tree = new CommandTree();
+        const cmd = new (class extends Command {
+            async execute() {}
+        })('create', 'Create', [
+            { name: 'username', schema: z.string() }
+        ]);
+        tree.add(cmd);
+
+        const completer = new Completer(tree);
+        const { matches } = completer.complete('create --');
+        expect(matches).toEqual(['--username']);
+    });
+
+    it('shows enum hints on short alias completions', () => {
+        const tree = new CommandTree();
+        const cmd = new (class extends Command {
+            async execute() {}
+        })('create', 'Create', [
+            { name: 'role', schema: z.enum(['admin', 'user']), aliases: ['r'] }
+        ]);
+        tree.add(cmd);
+
+        const completer = new Completer(tree);
+        const { matches } = completer.complete('create -');
+        expect(matches).toContain('-r [admin|user]');
+    });
+
+    it('shows enum hints for wrapped enum schema', () => {
+        const tree = new CommandTree();
+        const cmd = new (class extends Command {
+            async execute() {}
+        })('create', 'Create', [
+            { name: 'role', schema: z.enum(['admin', 'user']).optional() }
+        ]);
+        tree.add(cmd);
+
+        const completer = new Completer(tree);
+        const { matches } = completer.complete('create --');
+        expect(matches).toEqual(['--role [admin|user]']);
+    });
+
+    it('shows enum hints for nullable enum schema', () => {
+        const tree = new CommandTree();
+        const cmd = new (class extends Command {
+            async execute() {}
+        })('create', 'Create', [
+            { name: 'role', schema: z.enum(['admin', 'user']).nullable() }
+        ]);
+        tree.add(cmd);
+
+        const completer = new Completer(tree);
+        const { matches } = completer.complete('create --');
+        expect(matches).toEqual(['--role [admin|user]']);
+    });
+
+    it('shows enum hints for default enum schema', () => {
+        const tree = new CommandTree();
+        const cmd = new (class extends Command {
+            async execute() {}
+        })('create', 'Create', [
+            { name: 'role', schema: z.enum(['admin', 'user']).default('user') }
+        ]);
+        tree.add(cmd);
+
+        const completer = new Completer(tree);
+        const { matches } = completer.complete('create --');
+        expect(matches).toEqual(['--role [admin|user]']);
+    });
+
+    it('shows enum hints for catch enum schema', () => {
+        const tree = new CommandTree();
+        const cmd = new (class extends Command {
+            async execute() {}
+        })('create', 'Create', [
+            { name: 'role', schema: z.enum(['admin', 'user']).catch('user') }
+        ]);
+        tree.add(cmd);
+
+        const completer = new Completer(tree);
+        const { matches } = completer.complete('create --');
+        expect(matches).toEqual(['--role [admin|user]']);
+    });
+
+    it('shows enum hints for piped enum schema', () => {
+        const tree = new CommandTree();
+        const cmd = new (class extends Command {
+            async execute() {}
+        })('create', 'Create', [
+            { name: 'role', schema: z.enum(['admin', 'user']).pipe(z.string() as any) }
+        ]);
+        tree.add(cmd);
+
+        const completer = new Completer(tree);
+        const { matches } = completer.complete('create --');
+        expect(matches).toEqual(['--role [admin|user]']);
+    });
+
+    it('shows enum hints for branded enum schema', () => {
+        const tree = new CommandTree();
+        const cmd = new (class extends Command {
+            async execute() {}
+        })('create', 'Create', [
+            { name: 'role', schema: z.enum(['admin', 'user']).brand('Role') }
+        ]);
+        tree.add(cmd);
+
+        const completer = new Completer(tree);
+        const { matches } = completer.complete('create --');
+        expect(matches).toEqual(['--role [admin|user]']);
+    });
+
+    it('shows enum hints for nativeEnum with string values', () => {
+        const tree = new CommandTree();
+        const cmd = new (class extends Command {
+            async execute() {}
+        })('create', 'Create', [
+            { name: 'color', schema: z.enum({ Red: 'red', Green: 'green', Blue: 'blue' } as Record<string, string>) }
+        ]);
+        tree.add(cmd);
+
+        const completer = new Completer(tree);
+        const { matches } = completer.complete('create --');
+        expect(matches).toEqual(['--color [red|green|blue]']);
+    });
+
+    it('does not show enum hints for nativeEnum with number values', () => {
+        const tree = new CommandTree();
+        const cmd = new (class extends Command {
+            async execute() {}
+        })('create', 'Create', [
+            { name: 'level', schema: z.enum({ Low: 0, Medium: 1, High: 2 } as Record<string, number>) }
+        ]);
+        tree.add(cmd);
+
+        const completer = new Completer(tree);
+        const { matches } = completer.complete('create --');
+        expect(matches).toEqual(['--level']);
+    });
+
+    it('shows enum hints for literal string schema', () => {
+        const tree = new CommandTree();
+        const cmd = new (class extends Command {
+            async execute() {}
+        })('create', 'Create', [
+            { name: 'mode', schema: z.literal('strict') }
+        ]);
+        tree.add(cmd);
+
+        const completer = new Completer(tree);
+        const { matches } = completer.complete('create --');
+        expect(matches).toEqual(['--mode [strict]']);
+    });
+
+    it('does not show enum hints for literal number schema', () => {
+        const tree = new CommandTree();
+        const cmd = new (class extends Command {
+            async execute() {}
+        })('create', 'Create', [
+            { name: 'code', schema: z.literal(42) }
+        ]);
+        tree.add(cmd);
+
+        const completer = new Completer(tree);
+        const { matches } = completer.complete('create --');
+        expect(matches).toEqual(['--code']);
+    });
+
+    it('shows enum hints for prefault enum schema', () => {
+        const tree = new CommandTree();
+        const cmd = new (class extends Command {
+            async execute() {}
+        })('create', 'Create', [
+            { name: 'role', schema: z.enum(['admin', 'user']).prefault('user') }
+        ]);
+        tree.add(cmd);
+
+        const completer = new Completer(tree);
+        const { matches } = completer.complete('create --');
+        expect(matches).toEqual(['--role [admin|user]']);
+    });
+
+    it('shows enum hints for chained wrapped enum schema', () => {
+        const tree = new CommandTree();
+        const cmd = new (class extends Command {
+            async execute() {}
+        })('create', 'Create', [
+            { name: 'role', schema: z.enum(['admin', 'user']).optional().nullable().default('user') }
+        ]);
+        tree.add(cmd);
+
+        const completer = new Completer(tree);
+        const { matches } = completer.complete('create --');
+        expect(matches).toEqual(['--role [admin|user]']);
+    });
+
+    it('shows enum hints for multiple enum args on same command', () => {
+        const tree = new CommandTree();
+        const cmd = new (class extends Command {
+            async execute() {}
+        })('create', 'Create', [
+            { name: 'role', schema: z.enum(['admin', 'user']) },
+            { name: 'color', schema: z.enum(['red', 'blue']) },
+            { name: 'username', schema: z.string() }
+        ]);
+        tree.add(cmd);
+
+        const completer = new Completer(tree);
+        const { matches } = completer.complete('create --');
+        expect(matches).toContain('--role [admin|user]');
+        expect(matches).toContain('--color [red|blue]');
+        expect(matches).toContain('--username');
+    });
+
+    it('does not show enum hints for empty enum', () => {
+        const tree = new CommandTree();
+        const cmd = new (class extends Command {
+            async execute() {}
+        })('create', 'Create', [
+            { name: 'role', schema: z.enum([] as unknown as [string, ...string[]]) }
+        ]);
+        tree.add(cmd);
+
+        const completer = new Completer(tree);
+        const { matches } = completer.complete('create --');
+        expect(matches).toEqual(['--role']);
+    });
+
+    it('excludes flag used via long alias from prefix', () => {
+        const tree = new CommandTree();
+        const cmd = new (class extends Command {
+            async execute() {}
+        })('create', 'Create', [
+            { name: 'role', schema: z.string(), aliases: ['r'] }
+        ]);
+        tree.add(cmd);
+
+        const completer = new Completer(tree);
+        const { matches } = completer.complete('create --r admin --');
+        expect(matches).toEqual([]);
+    });
+
+    it('excludes flag used via short alias from prefix', () => {
+        const tree = new CommandTree();
+        const cmd = new (class extends Command {
+            async execute() {}
+        })('create', 'Create', [
+            { name: 'role', schema: z.string(), aliases: ['r'] }
+        ]);
+        tree.add(cmd);
+
+        const completer = new Completer(tree);
+        const { matches } = completer.complete('create -r admin --');
+        expect(matches).toEqual([]);
+    });
+
+    it('skips value token after recognized flag in prefix', () => {
+        const tree = new CommandTree();
+        const cmd = new (class extends Command {
+            async execute() {}
+        })('create', 'Create', [
+            { name: 'username', schema: z.string() },
+            { name: 'password', schema: z.string() }
+        ]);
+        tree.add(cmd);
+
+        const completer = new Completer(tree);
+        const { matches } = completer.complete('create --username Alice --password secret --');
+        expect(matches).toEqual([]);
+    });
+
+    it('skips unknown --flag in prefix when collecting used flags', () => {
+        const tree = new CommandTree();
+        const cmd = new (class extends Command {
+            async execute() {}
+        })('create', 'Create', [
+            { name: 'username', schema: z.string() }
+        ]);
+        tree.add(cmd);
+
+        const completer = new Completer(tree);
+        const { matches } = completer.complete('create --unknown foo --');
+        expect(matches).toEqual(['--username']);
+    });
+
+    it('skips unknown -x in prefix when collecting used flags', () => {
+        const tree = new CommandTree();
+        const cmd = new (class extends Command {
+            async execute() {}
+        })('create', 'Create', [
+            { name: 'username', schema: z.string() }
+        ]);
+        tree.add(cmd);
+
+        const completer = new Completer(tree);
+        const { matches } = completer.complete('create -z foo --');
+        expect(matches).toEqual(['--username']);
+    });
+
+    it('does not skip next token when flag is last in prefix', () => {
+        const tree = new CommandTree();
+        const cmd = new (class extends Command {
+            async execute() {}
+        })('create', 'Create', [
+            { name: 'username', schema: z.string() },
+            { name: 'role', schema: z.string() }
+        ]);
+        tree.add(cmd);
+
+        const completer = new Completer(tree);
+        const { matches } = completer.complete('create --username --');
+        expect(matches).toEqual(['--role']);
+    });
 });

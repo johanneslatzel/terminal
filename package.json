@@ -1,6 +1,6 @@
 {
     "name": "@johannes.latzel/terminal",
-    "version": "0.3.0",
+    "version": "0.3.1",
     "description": "Tree-structured TypeScript terminal/shell engine with automatic help and completion",
     "license": "MIT",
     "files": [

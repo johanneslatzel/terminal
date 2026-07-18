@@ -79,7 +79,7 @@ If the argument definition has `secret: true`, the prompt uses hidden input — 
 
 | Error                | Description                                                                |
 | -------------------- | -------------------------------------------------------------------------- |
-| `InvalidArgumentsError` | Missing required arg (no readline), unknown arg, schema validation failure |
+| `InvalidArgumentsError` | Missing required arg (no readline), unknown arg, duplicate flag, schema validation failure |
 | `InterruptedError`   | User pressed Ctrl+C during an interactive prompt — command is cancelled    |
 
 ---

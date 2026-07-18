@@ -12,6 +12,22 @@
 | `secret`      | When `true`, missing arguments prompt with hidden input (keystrokes echo as `*`)                    |
 | `position`    | 0-based index for bare-token (positional) arguments. Must form a contiguous sequence starting at 0. |
 
+## Enum completion hints
+
+When an argument's schema is a Zod enum (`z.enum([...])`), tab-completion automatically
+appends `[val1|val2|val3]` to the flag suggestion:
+
+```
+> create --role [admin|user|guest]
+```
+
+This works with enums wrapped in `.optional()`, `.default()`, `.pipe()`, etc.
+
+```ts
+arg('role', 'User role', z.enum(['admin', 'user', 'guest']));
+// Tab-completion shows: --role [admin|user|guest]
+```
+
 ## `arg()` factory {#arg}
 
 ```ts
@@ -27,6 +43,10 @@ arg('query', 'Search query', z.string(), 0);
 arg('password', 'API token', z.string().min(8), undefined, undefined, true);
 // → { name: 'password', description: 'API token', ..., secret: true }
 //   Prompts with hidden input when missing on the command line
+
+arg('role', 'User role', z.enum(['admin', 'user', 'guest']));
+// → { name: 'role', description: 'User role', schema: z.enum(['admin', 'user', 'guest']) }
+//   Tab-completion shows: --role [admin|user|guest]
 ```
 
 ## Positional arguments

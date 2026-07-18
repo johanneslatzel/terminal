@@ -1,6 +1,21 @@
 import { Command, CommandContainer } from '../types.js';
 import { CommandTree } from '../command-tree.js';
 import { tokenize } from '../input/parser.js';
+import type { CommandArgumentDefinition } from '../command-arguments.js';
+
+/**
+ * Extract enum values from a Zod schema by reading `_zod.values`,
+ * which is set on `$ZodEnum` and propagated through `.optional()`,
+ * `.default()`, `.nullable()`, `.pipe()`, etc.
+ *
+ * @returns The string values if the schema is an enum, or `null`.
+ */
+function extractEnumValues(schema: { _zod?: { values?: unknown } }): string[] | null {
+    const values = schema._zod?.values;
+    if (!(values instanceof Set)) return null;
+    const strings = [...values].filter((v): v is string => typeof v === 'string');
+    return strings.length > 0 ? strings : null;
+}
 
 export interface Completion {
     /** Matching command names. */
@@ -22,6 +37,49 @@ function collectAllNames(commands: Command[]): string[] {
 
 function isShortFlagPrefix(s: string): boolean {
     return s.startsWith('-') && !s.startsWith('--') && s.length === 2;
+}
+
+/**
+ * Build a set of canonical argument names that have already been provided
+ * on the command line, by scanning prefix tokens for --name and -x patterns.
+ */
+function collectUsedFlags(prefix: string[], definitions: CommandArgumentDefinition[]): Set<string> {
+    const used = new Set<string>();
+    const aliasMap = new Map<string, string>();
+    for (const def of definitions) {
+        for (const alias of def.aliases ?? []) {
+            aliasMap.set(alias, def.name);
+        }
+    }
+
+    for (let i = 0; i < prefix.length; i++) {
+        const token = prefix[i]!;
+        let canonicalName: string | undefined;
+
+        if (token.startsWith('--') && token.length > 2) {
+            const flagName = token.slice(2);
+            if (definitions.some((d) => d.name === flagName)) {
+                canonicalName = flagName;
+            } else if (aliasMap.has(flagName)) {
+                canonicalName = aliasMap.get(flagName)!;
+            }
+        } else if (isShortFlagPrefix(token)) {
+            const shortChar = token[1]!;
+            if (aliasMap.has(shortChar)) {
+                canonicalName = aliasMap.get(shortChar)!;
+            }
+        }
+
+        if (canonicalName) {
+            used.add(canonicalName);
+            const next = prefix[i + 1];
+            if (next !== undefined && !next.startsWith('--') && !isShortFlagPrefix(next)) {
+                i++;
+            }
+        }
+    }
+
+    return used;
 }
 
 /**
@@ -60,15 +118,27 @@ export class Completer {
         }
 
         if (lastMatched && !(lastMatched instanceof CommandContainer)) {
-            const flagPartial = partial.startsWith('--') ? partial : partial === '' ? '--' : null;
+            const flagPartial =
+                partial.startsWith('--') || partial.startsWith('-')
+                    ? partial
+                    : partial === ''
+                      ? '--'
+                      : null;
             if (flagPartial !== null) {
+                const defs = lastMatched.definitions();
+                const usedFlags = collectUsedFlags(prefix, defs);
                 const matches: string[] = [];
-                for (const def of lastMatched.definitions()) {
-                    const candidate = `--${def.name}`;
+                for (const def of defs) {
+                    if (usedFlags.has(def.name)) continue;
+                    const enumVals = extractEnumValues(def.schema);
+                    const suffix =
+                        enumVals && enumVals.length > 0 ? ` [${enumVals.join('|')}]` : '';
+                    const candidate = `--${def.name}${suffix}`;
                     if (candidate.startsWith(flagPartial)) matches.push(candidate);
                     for (const alias of def.aliases ?? []) {
                         const aliasCandidate = alias.length === 1 ? `-${alias}` : `--${alias}`;
-                        if (aliasCandidate.startsWith(flagPartial)) matches.push(aliasCandidate);
+                        if (aliasCandidate.startsWith(flagPartial))
+                            matches.push(aliasCandidate + suffix);
                     }
                 }
                 return { matches, partial };

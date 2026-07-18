@@ -102,6 +102,10 @@ export function parseFlags(
             throw new InvalidArgumentsError(`Unknown flag "${token}"`);
         }
 
+        if (name in args) {
+            throw new InvalidArgumentsError(`Duplicate argument "--${name}"`);
+        }
+
         const next = tokens[i + 1];
         if (next !== undefined && !next.startsWith('--')) {
             args[name] = next;

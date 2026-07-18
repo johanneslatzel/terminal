@@ -36,10 +36,11 @@ describe('parseFlags', () => {
         });
     });
 
-    it('overwrites duplicate keys with last value', () => {
-        expect(parseFlags(['--name', 'foo', '--name', 'bar'])).toEqual({
-            name: 'bar'
-        });
+    it('throws for duplicate flag names', () => {
+        expect(() => parseFlags(['--name', 'foo', '--name', 'bar'])).toThrow(InvalidArgumentsError);
+        expect(() => parseFlags(['--name', 'foo', '--name', 'bar'])).toThrow(
+            'Duplicate argument "--name"'
+        );
     });
 
     it('throws for token not starting with --', () => {

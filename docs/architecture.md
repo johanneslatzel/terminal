@@ -76,13 +76,19 @@ Given `["config", "set", "--theme", "dark"]`:
 --fields id, name → { fields: "id, name" }
 ```
 
+Duplicate flags (`--name foo --name bar`) throw `InvalidArgumentsError`. Both `--long` and `-x` short forms are checked.
+
 Bare tokens that don't match a positional definition are grouped onto the most recently written argument with a space separator. This lets `--fields id, name` produce the value `"id, name"` without quoting. Tokens with no prior argument and no positional definition still throw.
 
 Wrapped in [`CommandArguments`](arguments/index.md) with typed accessors.
 
 ## Tab completion
 
-The [`Completer`](https://github.com/johanneslatzel/terminal/blob/main/src/completer.ts) walks the command tree for matching names. At leaf commands, completes `--flag` names from `definitions()`.
+The [`Completer`](https://github.com/johanneslatzel/terminal/blob/main/src/completion/completer.ts) walks the command tree for matching names. At leaf commands, completes `--flag` names and `-x` short aliases from `definitions()`.
+
+Already-used flags are excluded from completions — if `--username` has been provided, it won't appear again in suggestions.
+
+When a definition's schema is a Zod enum (`z.enum([...])`), completions include the valid values: `--role [admin|user|guest]`. Enum values are read from Zod's `_zod.values` internal property, which propagates through `.optional()`, `.default()`, etc.
 
 ## Error model
 

@@ -2,7 +2,9 @@ import { z } from 'zod';
 import { InvalidArgumentsError } from './errors.js';
 import { InputManager } from './input-manager.js';
 
-/** Describes a single command-line argument (`--name value`). */
+/**
+ * Describes a single command-line argument (`--name value`).
+ */
 export interface CommandArgumentDefinition {
     /** Argument name (without `--` prefix). */
     name: string;
