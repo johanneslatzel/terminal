@@ -8,6 +8,7 @@ import { Terminal } from '../../src/terminal.js';
 import { command, container } from '../../src/command-factory.js';
 import { Command, CommandContainer, CommandContext } from '../../src/types.js';
 import { CommandNotFoundError, InterruptedError } from '../../src/errors.js';
+import { CTRL_BACKSPACE } from '../../src/keys.js';
 import { CommandArguments } from '../../src/command-arguments.js';
 import { z } from 'zod';
 
@@ -1746,6 +1747,70 @@ describe('Terminal.questionHidden', () => {
 
         expect(result).toBe('my-token');
         expect(chunks.join('')).toContain('token: ');
+        await term.stop();
+    });
+
+    it('readline survives acceptSecret with dropInflightKeystrokes enabled', async () => {
+        const stdin = ttyPassThrough();
+        const stdout = new PassThrough() as unknown as NodeJS.WriteStream;
+        const chunks: string[] = [];
+        stdout.on('data', (chunk: Buffer) => chunks.push(chunk.toString()));
+
+        const executed: string[] = [];
+        const login = new (class extends Command {
+            async execute(ctx: CommandContext) {
+                const pw = await ctx.terminal.questionHidden('Password: ');
+                executed.push('login:' + pw);
+            }
+        })('login');
+        const greet = new (class extends Command {
+            execute() { executed.push('greet'); }
+        })('greet');
+
+        const term = new Terminal({
+            stdin, stdout, prompt: '',
+            dropInflightKeystrokes: true
+        });
+        term.register(login);
+        term.register(greet);
+        await term.start();
+
+        stdin.write('login\n');
+        await new Promise((r) => setTimeout(r, 20));
+        stdin.write('secret\n');
+        await new Promise((r) => setTimeout(r, 100));
+
+        expect(executed).toContain('login:secret');
+
+        chunks.length = 0;
+        stdin.write('greet\n');
+        await new Promise((r) => setTimeout(r, 100));
+
+        expect(executed).toContain('greet');
+        await term.stop();
+    });
+
+    it('Ctrl+Backspace byte flows through filter in TTY mode', async () => {
+        const ttyIn = Object.assign(new PassThrough(), {
+            isTTY: true,
+            setRawMode: () => {},
+            isRaw: false
+        }) as unknown as NodeJS.ReadStream;
+        const ttyOut = new PassThrough() as unknown as NodeJS.WriteStream;
+        let executed = false;
+        const cmd = new (class extends Command {
+            execute() { executed = true; }
+        })('game');
+        const term = new Terminal({ stdin: ttyIn, stdout: ttyOut, prompt: '' });
+        term.register(cmd);
+        await term.start();
+
+        ttyIn.write(Buffer.from('game list'));
+        ttyIn.write(Buffer.from([CTRL_BACKSPACE]));
+        ttyIn.write(Buffer.from('\n'));
+        await new Promise((r) => setTimeout(r, 100));
+
+        expect(executed).toBe(true);
         await term.stop();
     });
 });

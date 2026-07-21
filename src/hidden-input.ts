@@ -1,11 +1,12 @@
 import { StringDecoder } from 'node:string_decoder';
+import { CTRL_C, CTRL_W, KEY_DEL, KEY_BS } from './keys.js';
 
 /**
  * Read a single line of input from a raw-mode terminal.
  *
  * Writes the prompt, enables raw mode, reads characters one at a time,
  * echoes a configurable mask for each printable keystroke, and handles
- * Enter, Backspace, Ctrl+C, and control-character filtering.
+ * Enter, Backspace, Ctrl+W (delete word), Ctrl+C, and control-character filtering.
  *
  * @param input  - Terminal input stream (must support `setRawMode`).
  * @param output - Terminal output stream (for prompt and mask echo).
@@ -39,13 +40,15 @@ export async function readRawTerminal(
                     return;
                 }
 
-                if (char === '\x03') {
+                // Ctrl+C – abort input, return empty string.
+                if (char === CTRL_C) {
                     output.write('^C\n');
                     finish('');
                     return;
                 }
 
-                if (char === '\x7f' || char === '\b') {
+                // Backspace (DEL / BS) – remove the last character.
+                if (char === KEY_DEL || char === KEY_BS) {
                     if (buf.length > 0) {
                         buf.pop();
                         output.write('\b \b');
@@ -53,6 +56,24 @@ export async function readRawTerminal(
                     continue;
                 }
 
+                // Ctrl+W – delete the previous word.  Skip trailing
+                // whitespace, then remove characters until the next
+                // whitespace boundary, erasing the mask echo for each.
+                if (char === CTRL_W) {
+                    let removed = 0;
+                    while (buf.length > 0 && buf[buf.length - 1] === ' ') {
+                        buf.pop();
+                        removed++;
+                    }
+                    while (buf.length > 0 && buf[buf.length - 1] !== ' ') {
+                        buf.pop();
+                        removed++;
+                    }
+                    for (let i = 0; i < removed; i++) output.write('\b \b');
+                    continue;
+                }
+
+                // Ignore any other control characters (< 0x20).
                 if (char.charCodeAt(0) < 32) continue;
 
                 buf.push(char);

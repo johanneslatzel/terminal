@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { PassThrough } from 'node:stream';
 import { readRawTerminal } from '../../src/hidden-input.js';
+import { CTRL_C, CTRL_W, KEY_BS } from '../../src/keys.js';
 
 function makeTtyStreams(): { input: any; output: any } {
     const input = Object.assign(new PassThrough(), {
@@ -44,7 +45,7 @@ describe('readRawTerminal', () => {
         output.on('data', (chunk: Buffer) => outputChunks.push(chunk.toString()));
 
         const promise = readRawTerminal(input, output, 'p: ');
-        input.write('\x03');
+        input.write(CTRL_C);
         const result = await promise;
 
         expect(result).toBe('');
@@ -56,7 +57,7 @@ describe('readRawTerminal', () => {
         output.on('data', () => {});
 
         const promise = readRawTerminal(input, output, 'p: ');
-        input.write('ab\x08c\n');
+        input.write('ab' + KEY_BS + 'c\n');
         const result = await promise;
 
         expect(result).toBe('ac');
@@ -67,7 +68,7 @@ describe('readRawTerminal', () => {
         output.on('data', () => {});
 
         const promise = readRawTerminal(input, output, 'p: ');
-        input.write('\x08\n');
+        input.write(KEY_BS + '\n');
         const result = await promise;
 
         expect(result).toBe('');
@@ -108,6 +109,50 @@ describe('readRawTerminal', () => {
         const result = await promise;
 
         expect(result).toBe('a');
+    });
+
+    it('Ctrl+W deletes last word', async () => {
+        const { input, output } = makeTtyStreams();
+        output.on('data', () => {});
+
+        const promise = readRawTerminal(input, output, 'p: ');
+        input.write('game list' + CTRL_W + '\n');
+        const result = await promise;
+
+        expect(result).toBe('game ');
+    });
+
+    it('Ctrl+W skips trailing whitespace before deleting word', async () => {
+        const { input, output } = makeTtyStreams();
+        output.on('data', () => {});
+
+        const promise = readRawTerminal(input, output, 'p: ');
+        input.write('game list  ' + CTRL_W + '\n');
+        const result = await promise;
+
+        expect(result).toBe('game ');
+    });
+
+    it('Ctrl+W at start of input is no-op', async () => {
+        const { input, output } = makeTtyStreams();
+        output.on('data', () => {});
+
+        const promise = readRawTerminal(input, output, 'p: ');
+        input.write(CTRL_W + '\n');
+        const result = await promise;
+
+        expect(result).toBe('');
+    });
+
+    it('Ctrl+W with multiple words deletes last word only', async () => {
+        const { input, output } = makeTtyStreams();
+        output.on('data', () => {});
+
+        const promise = readRawTerminal(input, output, 'p: ');
+        input.write('a b c' + CTRL_W + '\n');
+        const result = await promise;
+
+        expect(result).toBe('a b ');
     });
 
     it('uses default false for isRaw when undefined', async () => {

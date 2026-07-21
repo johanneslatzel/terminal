@@ -624,8 +624,10 @@ describe('InputManager', () => {
             expect(resumed).toBe(true);
         });
 
-        it('restores to drop on TTY: sets raw mode and pauses stdin', () => {
+        it('restores to drop on TTY: sets raw mode and resumes stdin', () => {
+            let stdinResumed = false;
             const { im, rl, stdin } = makeManager();
+            stdin.resume = () => { stdinResumed = true; };
             im.start(rl);
             // Call acceptInput while in drop mode
             im.drop();
@@ -633,6 +635,7 @@ describe('InputManager', () => {
             rl.emit('line', 'x');
             // After resolve, mode is restored to drop
             expect(stdin.isRaw).toBe(true);
+            expect(stdinResumed).toBe(true);
         });
 
         it('restores to drop on non-TTY without pausing rl', () => {
@@ -672,6 +675,30 @@ describe('InputManager', () => {
             const { im } = makeManager();
             // should not throw
             im.restoreCommandMode();
+        });
+
+        it('resumes rl and stdin on TTY', () => {
+            let rlResumed = false;
+            let stdinResumed = false;
+            const { im, rl, stdin } = makeManager();
+            rl.resume = () => { rlResumed = true; };
+            stdin.resume = () => { stdinResumed = true; };
+            im.start(rl);
+            im.restoreCommandMode();
+            expect(rlResumed).toBe(true);
+            expect(stdinResumed).toBe(true);
+        });
+
+        it('resumes rl but not stdin on non-TTY', () => {
+            let rlResumed = false;
+            let stdinResumed = false;
+            const { im, rl, stdin } = makeManager(undefined, undefined, false);
+            rl.resume = () => { rlResumed = true; };
+            stdin.resume = () => { stdinResumed = true; };
+            im.start(rl);
+            im.restoreCommandMode();
+            expect(rlResumed).toBe(true);
+            expect(stdinResumed).toBe(false);
         });
     });
 

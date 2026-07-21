@@ -1,6 +1,7 @@
 import * as readline from 'node:readline';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
+import { Transform } from 'node:stream';
 import { Mutex } from 'async-mutex';
 import { Command, type CommandContext, type TerminalOptions } from './types.js';
 import { CommandTree } from './command-tree.js';
@@ -15,6 +16,7 @@ import { ClearCommand } from './commands/clear.js';
 import { Hook } from './hook.js';
 import { TerminalHookBuilder } from './terminal-hook-builder.js';
 import { InputManager } from './input-manager.js';
+import { CTRL_BACKSPACE, CTRL_W } from './keys.js';
 import {
     TypedHook,
     BeforeParseHook,
@@ -55,6 +57,7 @@ export class Terminal {
     private mutex = new Mutex();
     private running = false;
     private inputManager: InputManager;
+    private inputFilter: Transform | null = null;
     private static readonly DEFAULT_OPTIONS = {
         prompt: '> ',
         stdin: process.stdin,
@@ -274,8 +277,34 @@ export class Terminal {
     private createReadline(): readline.Interface {
         const completer = new Completer(this.tree);
 
+        let input: NodeJS.ReadStream = this.options.stdin;
+
+        if (this.options.stdin.isTTY) {
+            /**
+             * Byte-level filter that sits between stdin and readline.
+             *
+             * Many terminals send 0x08 (Ctrl+H) when the user presses
+             * Ctrl+Backspace.  Readline maps that to `deleteCharBackword`,
+             * which only removes a single character.  To get proper
+             * word-level deletion we remap 0x08 to 0x17 (Ctrl+W), which
+             * readline handles as `unix-word-rubout`.
+             */
+            this.inputFilter = new Transform({
+                transform(chunk: Buffer, _encoding: BufferEncoding, callback) {
+                    const filtered = Buffer.alloc(chunk.length);
+                    for (let i = 0; i < chunk.length; i++) {
+                        const byte = chunk[i]!;
+                        filtered[i] = byte === CTRL_BACKSPACE ? CTRL_W.charCodeAt(0) : byte;
+                    }
+                    callback(null, filtered);
+                }
+            });
+            this.options.stdin.pipe(this.inputFilter, { end: false });
+            input = this.inputFilter as unknown as NodeJS.ReadStream;
+        }
+
         const rlOptions: readline.ReadLineOptions = {
-            input: this.options.stdin,
+            input,
             output: this.options.stdout,
             prompt: this.options.prompt,
             historySize: this.options.historySize,
@@ -304,6 +333,11 @@ export class Terminal {
             await hook.exec();
         }
         this.inputManager.stop();
+        if (this.inputFilter) {
+            this.options.stdin.unpipe(this.inputFilter);
+            this.inputFilter.destroy();
+            this.inputFilter = null;
+        }
         this.rl = null;
         for (const hook of this._onStopHooks) {
             await hook.exec();

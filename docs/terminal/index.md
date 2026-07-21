@@ -20,7 +20,7 @@ The `Terminal` class creates an interactive shell — it manages the readline lo
 
 ## Lifecycle
 
-`start()` initializes the readline interface, fires `onStart` hooks, and begins accepting input. `stop()` terminates the loop, runs `beforeExit` / `onStop` hooks, and cleans up. `setPrompt()` changes the prompt string at runtime.
+`start()` initializes the readline interface, fires `onStart` hooks, and begins accepting input. On TTY, a byte-level Transform filter is installed between stdin and readline to remap Ctrl+Backspace to Ctrl+W for word deletion. `stop()` terminates the loop, unpipes and destroys the input filter, runs `beforeExit` / `onStop` hooks, and cleans up. `setPrompt()` changes the prompt string at runtime.
 
 ## Concurrency
 

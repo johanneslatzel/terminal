@@ -150,6 +150,8 @@ export class InputManager {
             if (this.stdin.isTTY && !echo) {
                 (this.stdin as unknown as { setRawMode(mode: boolean): void }).setRawMode(true);
             }
+            // Resume stdin so the stdin → filter → readline pipeline
+            // can deliver data after a previous pause.
             if (this.stdin.isTTY) {
                 this.stdin.resume();
             }
@@ -225,9 +227,21 @@ export class InputManager {
     /**
      * Restore mode to **command** after a command finishes executing.
      * Undoes the effect of {@link drop} so the REPL can accept new input.
+     *
+     * Resumes both stdin and the readline interface.  This is necessary
+     * because with the `stdin → filter → readline` pipe introduced for
+     * Ctrl+Backspace handling, `rl.resume()` only resumes the filter
+     * (readline's immediate input) — stdin at the source must be
+     * resumed separately so data can flow through the entire pipeline.
      */
     restoreCommandMode(): void {
         this.mode = InputMode.Command;
+        // With the stdin → filter → readline pipe, rl.resume() only
+        // resumes the filter — stdin must be resumed at the source
+        // so data can flow through the pipeline.
+        if (this.stdin.isTTY) {
+            this.stdin.resume();
+        }
         if (this.rl) {
             this.rl.resume();
         }
@@ -269,8 +283,19 @@ export class InputManager {
         if (mode === InputMode.Drop) {
             if (this.stdin.isTTY) {
                 (this.stdin as unknown as { setRawMode(mode: boolean): void }).setRawMode(true);
+                // With the stdin → filter → readline pipe, rl.resume() only
+                // resumes the filter — stdin must be resumed at the source
+                // so data can flow through the pipeline.
+                this.stdin.resume();
             }
         } else if (mode === InputMode.Command) {
+            // readRawTerminal calls input.pause() when it finishes,
+            // which stops the stdin → filter → readline pipeline at the
+            // source.  Resume stdin so the REPL can accept keystrokes
+            // again.
+            if (this.stdin.isTTY) {
+                this.stdin.resume();
+            }
             if (this.rl) {
                 this.rl.resume();
             }

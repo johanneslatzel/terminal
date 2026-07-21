@@ -16,6 +16,8 @@ input → tokenize → resolve → parse flags → execute → output → loop
 
 ## Input management
 
+On TTY, a byte-level `Transform` filter sits between stdin and readline. It remaps the Ctrl+Backspace byte (`0x08`, which many terminals emit) to Ctrl+W (`0x17`), so readline performs word-level deletion instead of single-character delete. The filter is created when `Terminal` starts and torn down on `stop()`.
+
 An internal input manager sits between readline and the rest of the system. It routes lines based on the current mode:
 
 | Mode      | What happens                                        |
