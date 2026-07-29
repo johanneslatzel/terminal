@@ -17,10 +17,13 @@ The `Terminal` class creates an interactive shell — it manages the readline lo
 | `historySize` | `100`            | Readline history size                                          |
 | `historyPath` | —                | Path for [persisting command history](history.md) (JSON array) |
 | `dropInflightKeystrokes` | `false` | When `true`, suppresses echo and discards input that arrives while a command is executing (TTY only). When `false` (default), input is queued and processed after the command finishes. |
+| `silentSigint` | `false` | When `true`, suppresses the `^C` echo normally written to stdout on Ctrl+C. The current input line is still cleared and the prompt is re-displayed. |
 
 ## Lifecycle
 
 `start()` initializes the readline interface, fires `onStart` hooks, and begins accepting input. On TTY, a byte-level Transform filter is installed between stdin and readline to remap Ctrl+Backspace to Ctrl+W for word deletion. `stop()` terminates the loop, unpipes and destroys the input filter, runs `beforeExit` / `onStop` hooks, and cleans up. `setPrompt()` changes the prompt string at runtime.
+
+Pressing **Ctrl+C** at the command prompt clears the current input line and re-prompts. When `silentSigint` is `true`, the `^C` indicator is suppressed. During an interactive argument prompt (e.g., `args.require()`), Ctrl+C cancels the command silently.
 
 ## Concurrency
 

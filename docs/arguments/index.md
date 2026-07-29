@@ -50,7 +50,7 @@ Like [`require`](#require), but **always prompts with hidden input** when the ar
 const password = await args.requireSecret('password');
 ```
 
-Keystrokes echo as `*`. **Ctrl+W** deletes the previous word (skipping trailing whitespace). Pass empty string on Ctrl+C. Falls back to a visible prompt when stdin is not a TTY.
+Keystrokes echo as `*`. **Ctrl+W** / **Ctrl+Backspace** deletes the previous word (skipping trailing whitespace). Pass empty string on Ctrl+C. Falls back to a visible prompt when stdin is not a TTY.
 
 ## `flag(name)` {#flag}
 

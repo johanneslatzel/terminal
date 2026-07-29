@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { PassThrough } from 'node:stream';
 import { readRawTerminal } from '../../src/hidden-input.js';
-import { CTRL_C, CTRL_W, KEY_BS } from '../../src/keys.js';
+import { CTRL_C, CTRL_W, KEY_DEL, KEY_BS } from '../../src/keys.js';
 
 function makeTtyStreams(): { input: any; output: any } {
     const input = Object.assign(new PassThrough(), {
@@ -52,12 +52,25 @@ describe('readRawTerminal', () => {
         expect(outputChunks.join('')).toContain('^C');
     });
 
+    it('does not write ^C on Ctrl+C when silentSigint is true', async () => {
+        const { input, output } = makeTtyStreams();
+        const outputChunks: string[] = [];
+        output.on('data', (chunk: Buffer) => outputChunks.push(chunk.toString()));
+
+        const promise = readRawTerminal(input, output, 'p: ', '*', true);
+        input.write(CTRL_C);
+        const result = await promise;
+
+        expect(result).toBe('');
+        expect(outputChunks.join('')).not.toContain('^C');
+    });
+
     it('handles backspace correctly', async () => {
         const { input, output } = makeTtyStreams();
         output.on('data', () => {});
 
         const promise = readRawTerminal(input, output, 'p: ');
-        input.write('ab' + KEY_BS + 'c\n');
+        input.write('ab' + KEY_DEL + 'c\n');
         const result = await promise;
 
         expect(result).toBe('ac');
@@ -68,7 +81,7 @@ describe('readRawTerminal', () => {
         output.on('data', () => {});
 
         const promise = readRawTerminal(input, output, 'p: ');
-        input.write(KEY_BS + '\n');
+        input.write(KEY_DEL + '\n');
         const result = await promise;
 
         expect(result).toBe('');
@@ -153,6 +166,17 @@ describe('readRawTerminal', () => {
         const result = await promise;
 
         expect(result).toBe('a b ');
+    });
+
+    it('Ctrl+Backspace (BS) deletes last word', async () => {
+        const { input, output } = makeTtyStreams();
+        output.on('data', () => {});
+
+        const promise = readRawTerminal(input, output, 'p: ');
+        input.write('game list' + KEY_BS + '\n');
+        const result = await promise;
+
+        expect(result).toBe('game ');
     });
 
     it('uses default false for isRaw when undefined', async () => {

@@ -42,7 +42,8 @@ export class InputManager {
         private stdin: NodeJS.ReadStream,
         private stdout: NodeJS.WriteStream,
         private onCommand: (line: string) => void,
-        private onClose?: () => void
+        private onClose?: () => void,
+        private silentSigint = false
     ) {}
 
     /**
@@ -56,7 +57,11 @@ export class InputManager {
         });
 
         rl.on('SIGINT', () => {
-            this.stdout.write('^C\n');
+            readline.clearLine(this.stdout, -1);
+            readline.cursorTo(this.stdout, 0);
+            if (!this.silentSigint) {
+                this.stdout.write('^C\n');
+            }
             if (this.mode === InputMode.Accept && this.pendingResolve && this.pendingReject) {
                 const reject = this.pendingReject;
                 const restore = this.previousMode;
@@ -218,10 +223,12 @@ export class InputManager {
         this.rl.pause();
         this.stdin.removeAllListeners('data');
 
-        return readRawTerminal(this.stdin, this.stdout, prompt, mask).finally(() => {
-            for (const listener of dataListeners) this.stdin.on('data', listener);
-            this.restoreMode(previousMode);
-        });
+        return readRawTerminal(this.stdin, this.stdout, prompt, mask, this.silentSigint).finally(
+            () => {
+                for (const listener of dataListeners) this.stdin.on('data', listener);
+                this.restoreMode(previousMode);
+            }
+        );
     }
 
     /**

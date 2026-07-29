@@ -118,6 +118,25 @@ export class Completer {
         }
 
         if (lastMatched && !(lastMatched instanceof CommandContainer)) {
+            const lastPrefixToken = prefix[prefix.length - 1]!;
+            const defs = lastMatched.definitions();
+            let flagDef: CommandArgumentDefinition | undefined;
+
+            if (lastPrefixToken.startsWith('--')) {
+                flagDef = defs.find((d) => d.name === lastPrefixToken.slice(2));
+            } else if (isShortFlagPrefix(lastPrefixToken)) {
+                const shortChar = lastPrefixToken[1]!;
+                flagDef = defs.find((d) => d.aliases?.includes(shortChar));
+            }
+
+            if (flagDef) {
+                const enumVals = extractEnumValues(flagDef.schema);
+                if (enumVals && enumVals.length > 0) {
+                    const matches = enumVals.filter((v) => v.startsWith(partial));
+                    return { matches, partial };
+                }
+            }
+
             const flagPartial =
                 partial.startsWith('--') || partial.startsWith('-')
                     ? partial

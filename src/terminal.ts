@@ -63,7 +63,8 @@ export class Terminal {
         stdin: process.stdin,
         stdout: process.stdout,
         historySize: 100,
-        dropInflightKeystrokes: false
+        dropInflightKeystrokes: false,
+        silentSigint: false
     };
 
     private options: TerminalOptions & {
@@ -72,6 +73,7 @@ export class Terminal {
         stdout: NodeJS.WriteStream;
         historySize: number;
         dropInflightKeystrokes: boolean;
+        silentSigint: boolean;
     };
     private ctx: CommandContext;
     private ctxState: Record<string, unknown> = {};
@@ -89,7 +91,8 @@ export class Terminal {
             (line) => this.handleLine(line),
             () => {
                 if (this.running) void this.stop();
-            }
+            },
+            this.options.silentSigint
         );
         this.ctx = this.createContext();
         this.registerBuiltins();

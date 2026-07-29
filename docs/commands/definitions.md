@@ -23,9 +23,21 @@ appends `[val1|val2|val3]` to the flag suggestion:
 
 This works with enums wrapped in `.optional()`, `.default()`, `.pipe()`, etc.
 
+After typing `--flag ` (with trailing space), the completer switches to completing
+individual enum values instead of flag names. Partial input is filtered:
+
+```
+> create --role    # Tab → admin  user  guest
+> create --role a  # Tab → admin
+```
+
+This also works with short aliases (`-r a` → `admin`).
+
 ```ts
 arg('role', 'User role', z.enum(['admin', 'user', 'guest']));
-// Tab-completion shows: --role [admin|user|guest]
+// --role    → admin | user | guest
+// --role a  → admin
+// --        → --role [admin|user|guest]
 ```
 
 ## `arg()` factory {#arg}
@@ -46,7 +58,8 @@ arg('password', 'API token', z.string().min(8), undefined, undefined, true);
 
 arg('role', 'User role', z.enum(['admin', 'user', 'guest']));
 // → { name: 'role', description: 'User role', schema: z.enum(['admin', 'user', 'guest']) }
-//   Tab-completion shows: --role [admin|user|guest]
+// --role [admin|user|guest]  (flag hint)
+// --role admin               (value completion)
 ```
 
 ## Positional arguments

@@ -928,6 +928,81 @@ describe('Completer', () => {
         expect(matches).toEqual(['--role']);
     });
 
+    it('completes enum values after --flag with trailing space', () => {
+        const tree = new CommandTree();
+        const cmd = new (class extends Command {
+            async execute() {}
+        })('create', 'Create', [
+            { name: 'role', schema: z.enum(['admin', 'user', 'guest']) }
+        ]);
+        tree.add(cmd);
+
+        const completer = new Completer(tree);
+        const { matches, partial } = completer.complete('create --role ');
+        expect(partial).toBe('');
+        expect(matches).toEqual(['admin', 'user', 'guest']);
+    });
+
+    it('completes partial enum values after --flag', () => {
+        const tree = new CommandTree();
+        const cmd = new (class extends Command {
+            async execute() {}
+        })('create', 'Create', [
+            { name: 'role', schema: z.enum(['admin', 'user', 'guest']) }
+        ]);
+        tree.add(cmd);
+
+        const completer = new Completer(tree);
+        const { matches, partial } = completer.complete('create --role a');
+        expect(partial).toBe('a');
+        expect(matches).toEqual(['admin']);
+    });
+
+    it('completes enum values after short alias with trailing space', () => {
+        const tree = new CommandTree();
+        const cmd = new (class extends Command {
+            async execute() {}
+        })('create', 'Create', [
+            { name: 'role', schema: z.enum(['admin', 'user']), aliases: ['r'] }
+        ]);
+        tree.add(cmd);
+
+        const completer = new Completer(tree);
+        const { matches, partial } = completer.complete('create -r ');
+        expect(partial).toBe('');
+        expect(matches).toEqual(['admin', 'user']);
+    });
+
+    it('completes partial enum values after short alias', () => {
+        const tree = new CommandTree();
+        const cmd = new (class extends Command {
+            async execute() {}
+        })('create', 'Create', [
+            { name: 'role', schema: z.enum(['admin', 'user']), aliases: ['r'] }
+        ]);
+        tree.add(cmd);
+
+        const completer = new Completer(tree);
+        const { matches, partial } = completer.complete('create -r a');
+        expect(partial).toBe('a');
+        expect(matches).toEqual(['admin']);
+    });
+
+    it('shows flag completions for non-enum flag with trailing space', () => {
+        const tree = new CommandTree();
+        const cmd = new (class extends Command {
+            async execute() {}
+        })('create', 'Create', [
+            { name: 'username', schema: z.string() },
+            { name: 'role', schema: z.enum(['admin', 'user']) }
+        ]);
+        tree.add(cmd);
+
+        const completer = new Completer(tree);
+        const { matches } = completer.complete('create --username ');
+        expect(matches).toEqual(['--role [admin|user]']);
+    });
+
     it('excludes flag used via long alias from prefix', () => {
         const tree = new CommandTree();
         const cmd = new (class extends Command {

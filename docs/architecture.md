@@ -28,6 +28,8 @@ An internal input manager sits between readline and the rest of the system. It r
 
 Ctrl+C during `accept` mode rejects the pending prompt with `InterruptedError` and restores the previous mode. The command is cancelled silently.
 
+In both modes, the current input line is cleared and the cursor reset. When the [`silentSigint`](terminal/index.md#options) option is `true`, the `^C` indicator is suppressed.
+
 ### Mode transitions
 
 When a command finishes executing, the input manager returns to whatever mode was active before the command started. If a command calls [`args.require()`](arguments/index.md#require) or [`args.requireSecret()`](arguments/index.md#requiresecret), the manager switches to `accept` mode for the duration of the prompt, then restores the previous mode (typically `drop` during execution, or `command` outside it).
@@ -91,6 +93,8 @@ The [`Completer`](https://github.com/johanneslatzel/terminal/blob/main/src/compl
 Already-used flags are excluded from completions — if `--username` has been provided, it won't appear again in suggestions.
 
 When a definition's schema is a Zod enum (`z.enum([...])`), completions include the valid values: `--role [admin|user|guest]`. Enum values are read from Zod's `_zod.values` internal property, which propagates through `.optional()`, `.default()`, etc.
+
+After typing `--flag ` (with trailing space), the completer switches to completing individual enum values instead of flag names. For example, `--role ` followed by pressing Tab shows `admin`, `user`, `guest`. Partial input is filtered: `--role a` → `admin`. This also works with short aliases (`-r a` → `admin`).
 
 ## Error model
 

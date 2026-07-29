@@ -538,6 +538,21 @@ describe('Terminal', () => {
         expect(chunks.join('')).toContain('^C');
     });
 
+    it('SIGINT does not write ^C when silentSigint is true', async () => {
+        const ttyIn = Object.assign(new PassThrough(), {
+            isTTY: true, setRawMode: () => {}, isRaw: false
+        }) as unknown as NodeJS.ReadStream;
+        const ttyOut = new PassThrough() as unknown as NodeJS.WriteStream;
+        const ttyChunks: string[] = [];
+        ttyOut.on('data', (chunk: Buffer) => ttyChunks.push(chunk.toString()));
+        const t = new Terminal({ stdin: ttyIn, stdout: ttyOut, prompt: '', silentSigint: true });
+        await t.start();
+        const rl = (t as unknown as { rl: NodeJS.EventEmitter }).rl;
+        rl.emit('SIGINT');
+        expect(ttyChunks.join('')).not.toContain('^C');
+        await t.stop();
+    });
+
     it('SIGINT during argument prompt aborts command and allows new commands', async () => {
         const executed: string[] = [];
         const cmd = new (class extends Command {
@@ -678,6 +693,39 @@ describe('Terminal', () => {
         // Should see ^C at least twice
         const cCount = (output.match(/\^C/g) || []).length;
         expect(cCount).toBeGreaterThanOrEqual(2);
+    });
+
+    it('SIGINT during argument prompt suppresses ^C when silentSigint is true', async () => {
+        const ttyIn = Object.assign(new PassThrough(), {
+            isTTY: true, setRawMode: () => {}, isRaw: false
+        }) as unknown as NodeJS.ReadStream;
+        const ttyOut = new PassThrough() as unknown as NodeJS.WriteStream;
+        const ttyChunks: string[] = [];
+        ttyOut.on('data', (chunk: Buffer) => ttyChunks.push(chunk.toString()));
+        const t = new Terminal({ stdin: ttyIn, stdout: ttyOut, prompt: '', silentSigint: true });
+
+        const cmd = new (class extends Command {
+            constructor() {
+                super('req', 'Requires id', [
+                    { name: 'id', schema: z.string(), required: true }
+                ]);
+            }
+            async execute(_ctx: CommandContext, args: CommandArguments) {
+                await args.require<string>('id');
+            }
+        })();
+        t.register(cmd);
+        await t.start();
+
+        ttyIn.write('req\n');
+        await waitForOutput(ttyChunks, (s) => s.includes('argument [id]:'));
+
+        const rl = (t as unknown as { rl: NodeJS.EventEmitter }).rl;
+        rl.emit('SIGINT');
+        await new Promise((r) => setTimeout(r, 50));
+
+        expect(ttyChunks.join('')).not.toContain('^C');
+        await t.stop();
     });
 
     it('close event stops the terminal', async () => {
@@ -1658,6 +1706,24 @@ describe('Terminal.questionHidden', () => {
 
         expect(result).toBe('');
         expect(chunks.join('')).toContain('^C');
+        await term.stop();
+    });
+
+    it('returns empty on Ctrl+C without ^C when silentSigint is true', async () => {
+        const stdin = ttyPassThrough();
+        const stdout = new PassThrough() as unknown as NodeJS.WriteStream;
+        const chunks: string[] = [];
+        stdout.on('data', (chunk: Buffer) => chunks.push(chunk.toString()));
+
+        const term = new Terminal({ stdin, stdout, prompt: '', silentSigint: true });
+        await term.start();
+
+        const promise = term.questionHidden('p: ');
+        stdin.write('\x03');
+        const result = await promise;
+
+        expect(result).toBe('');
+        expect(chunks.join('')).not.toContain('^C');
         await term.stop();
     });
 

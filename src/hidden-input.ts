@@ -6,7 +6,7 @@ import { CTRL_C, CTRL_W, KEY_DEL, KEY_BS } from './keys.js';
  *
  * Writes the prompt, enables raw mode, reads characters one at a time,
  * echoes a configurable mask for each printable keystroke, and handles
- * Enter, Backspace, Ctrl+W (delete word), Ctrl+C, and control-character filtering.
+ * Enter, Backspace, Ctrl+W / Ctrl+Backspace (delete word), Ctrl+C, and control-character filtering.
  *
  * @param input  - Terminal input stream (must support `setRawMode`).
  * @param output - Terminal output stream (for prompt and mask echo).
@@ -19,7 +19,8 @@ export async function readRawTerminal(
     input: NodeJS.ReadStream,
     output: NodeJS.WriteStream,
     prompt: string,
-    mask: string = '*'
+    mask: string = '*',
+    silentSigint: boolean = false
 ): Promise<string> {
     output.write(prompt);
 
@@ -42,13 +43,15 @@ export async function readRawTerminal(
 
                 // Ctrl+C – abort input, return empty string.
                 if (char === CTRL_C) {
-                    output.write('^C\n');
+                    if (!silentSigint) {
+                        output.write('^C\n');
+                    }
                     finish('');
                     return;
                 }
 
-                // Backspace (DEL / BS) – remove the last character.
-                if (char === KEY_DEL || char === KEY_BS) {
+                // Backspace (DEL) – remove the last character.
+                if (char === KEY_DEL) {
                     if (buf.length > 0) {
                         buf.pop();
                         output.write('\b \b');
@@ -56,10 +59,10 @@ export async function readRawTerminal(
                     continue;
                 }
 
-                // Ctrl+W – delete the previous word.  Skip trailing
-                // whitespace, then remove characters until the next
-                // whitespace boundary, erasing the mask echo for each.
-                if (char === CTRL_W) {
+                // Ctrl+W / Ctrl+Backspace (BS) – delete the previous word.
+                // Skip trailing whitespace, then remove characters until
+                // the next whitespace boundary, erasing the mask echo for each.
+                if (char === CTRL_W || char === KEY_BS) {
                     let removed = 0;
                     while (buf.length > 0 && buf[buf.length - 1] === ' ') {
                         buf.pop();

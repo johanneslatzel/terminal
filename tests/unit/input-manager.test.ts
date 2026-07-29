@@ -39,11 +39,12 @@ function makeMockRl(): any {
 function makeManager(
     onCommand?: (line: string) => void,
     onClose?: () => void,
-    tty = true
+    tty = true,
+    silentSigint = false
 ) {
     const { stdin, stdout, stdoutChunks } = tty ? makeTtyStreams() : makeNonTtyStreams();
     const commandCb = onCommand ?? (() => {});
-    const im = new InputManager(stdin, stdout, commandCb, onClose);
+    const im = new InputManager(stdin, stdout, commandCb, onClose, silentSigint);
     const rl = makeMockRl();
     return { im, stdin, stdout, stdoutChunks, rl, commandCb };
 }
@@ -93,6 +94,42 @@ describe('InputManager', () => {
             rl.emit('SIGINT');
             expect(stdoutChunks.join('')).toContain('^C');
             expect(prompted).toBe(true);
+        });
+
+        it('does not write ^C on SIGINT when silentSigint is true', () => {
+            const { im, rl, stdoutChunks } = makeManager(undefined, undefined, true, true);
+            let prompted = false;
+            rl.prompt = () => { prompted = true; };
+            im.start(rl);
+            rl.emit('SIGINT');
+            expect(stdoutChunks.join('')).not.toContain('^C');
+            expect(prompted).toBe(true);
+        });
+
+        it('still clears the line on SIGINT when silentSigint is true', () => {
+            const { im, rl, stdoutChunks } = makeManager(undefined, undefined, true, true);
+            rl.prompt = () => {};
+            im.start(rl);
+            rl.emit('SIGINT');
+            const output = stdoutChunks.join('');
+            // Line clear + cursor reset write ANSI escape sequences (ESC prefix)
+            const ESC = String.fromCharCode(0x1b);
+            expect(output.startsWith(ESC)).toBe(true);
+            expect(output).not.toContain('^C');
+        });
+
+        it('clears the current line before writing ^C on SIGINT', () => {
+            const { im, rl, stdoutChunks } = makeManager();
+            im.start(rl);
+            rl.emit('SIGINT');
+            const output = stdoutChunks.join('');
+            expect(output).toContain('^C');
+            // readline.clearLine(stream, -1) and readline.cursorTo(stream, 0)
+            // write ANSI escape sequences for line clear and cursor positioning.
+            // Check that output starts with ESC (0x1B) — the escape sequences
+            // precede the ^C text.
+            const ESC = String.fromCharCode(0x1b);
+            expect(output.startsWith(ESC)).toBe(true);
         });
 
         it('writes newline and calls onClose on close', () => {
@@ -428,6 +465,15 @@ describe('InputManager', () => {
             await expect(promise).rejects.toBeInstanceOf(InterruptedError);
             // should be back in drop mode — raw mode on
             expect(stdin.isRaw).toBe(true);
+        });
+
+        it('does not write ^C on SIGINT during accept when silentSigint is true', async () => {
+            const { im, rl, stdoutChunks } = makeManager(undefined, undefined, true, true);
+            im.start(rl);
+            const promise = im.acceptInput('p: ');
+            rl.emit('SIGINT');
+            await expect(promise).rejects.toBeInstanceOf(InterruptedError);
+            expect(stdoutChunks.join('')).not.toContain('^C');
         });
     });
 

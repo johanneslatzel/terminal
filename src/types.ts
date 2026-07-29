@@ -186,4 +186,10 @@ export interface TerminalOptions {
      * preserves all input (queued and processed after the command finishes).
      */
     dropInflightKeystrokes?: boolean;
+    /**
+     * When `true`, the `^C` echo normally written to stdout on SIGINT is
+     * suppressed.  The current input line is still cleared and the cursor
+     * reset, but no visible indicator is printed.  Default `false`.
+     */
+    silentSigint?: boolean;
 }
