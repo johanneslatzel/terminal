@@ -13,7 +13,7 @@ term.start();
 - **[Commands](commands/index.md)** — factories, classes, argument definitions
 - **[Arguments](arguments/index.md)** — typed accessors, prompting, zod schemas
 - **[Hooks](hooks/index.md)** — lifecycle events, error handling
-- **[Architecture](architecture.md)** — execution pipeline, input routing, tokenizer, resolution
+- **[Architecture](architecture.md)** — execution flow, input routing, pipe operator, tokenizer, resolution
 - **[Builtins](builtins.md)** — help, exit, clear
 
 ## License

@@ -1,18 +1,14 @@
 # Arguments
 
-Wrapper for parsed `--name value` pairs with typed accessors, schema validation, and interactive prompting.
+Wrapper for parsed `--name value` pairs with typed accessors, schema validation, interactive prompting, and pipeline input access.
 
-Methods: `has()`, `raw()`, `require<T>()`, `requireSecret()`, `flag()`.
+Methods: `has()`, `require<T>()`, `requireSecret()`, `flag()`, `requirePipelineArray()`.
 
-All accessors require a matching [`CommandArgumentDefinition`](../commands/definitions.md). Missing definitions throw `InvalidArgumentsError`.
+The value accessors (`require`, `requireSecret`, `flag`) require a matching [`CommandArgumentDefinition`](../commands/definitions.md); missing definitions throw `InvalidArgumentsError`. `has()` works without one.
 
 ## `has(name)`
 
 Check whether an argument was provided on the command line.
-
-## `raw(name)`
-
-Return the raw string value, or `undefined`.
 
 ## `require<T>(name)` {#require}
 
@@ -62,6 +58,30 @@ const verbose = await args.flag('verbose');
 
 Define with `z.boolean()`. **Don't use `z.coerce.boolean()`** — Zod 4's `Boolean()` turns `"false"` into `true`. The string-to-boolean coercion is handled internally.
 
+## `requirePipelineArray()` {#requirepipelinearray}
+
+Return all pipeline input items as an array. Only available when the command's `acceptsPipelineInput` is `Array`:
+
+```ts
+const items = await args.requirePipelineArray();
+for (const item of items) {
+    ctx.stdout.write(item.name + '\n');
+}
+```
+
+An Array-accepting command run standalone (without a pipeline) receives `[]` from the terminal. `InvalidArgumentsError` is only thrown when no pipeline array input is available — i.e. outside Array mode (`None` or `Single`), such as when constructing `CommandArguments` directly.
+
+## Single mode auto-mapping
+
+When a command declares `PipelineInputAcceptance.Single`, pipeline object fields are automatically mapped to [`CommandArgumentDefinition`](../commands/definitions.md) values. CLI `--name` arguments take precedence over pipeline fields:
+
+```ts
+// Pipeline item: { name: 'Alice', role: 'admin' }
+// CLI: --role user
+const name = await args.require<string>('name');  // 'Alice' (from pipeline)
+const role = await args.require<string>('role');   // 'user'  (CLI wins)
+```
+
 ## Prompting
 
 When a required argument is missing and a readline is available, `require<T>(name)` prompts:
@@ -79,7 +99,7 @@ If the argument definition has `secret: true`, the prompt uses hidden input — 
 
 | Error                | Description                                                                |
 | -------------------- | -------------------------------------------------------------------------- |
-| `InvalidArgumentsError` | Missing required arg (no readline), unknown arg, duplicate flag, schema validation failure |
+| `InvalidArgumentsError` | Missing required arg (no readline), unknown arg, duplicate flag, schema validation failure, calling `requirePipelineArray()` outside Array mode |
 | `InterruptedError`   | User pressed Ctrl+C during an interactive prompt — command is cancelled    |
 
 ---

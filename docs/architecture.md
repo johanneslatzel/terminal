@@ -1,6 +1,6 @@
 # Architecture
 
-## Pipeline
+## Execution flow
 
 ```
 input → tokenize → resolve → parse flags → execute → output → loop
@@ -84,7 +84,152 @@ Duplicate flags (`--name foo --name bar`) throw `InvalidArgumentsError`. Both `-
 
 Bare tokens that don't match a positional definition are grouped onto the most recently written argument with a space separator. This lets `--fields id, name` produce the value `"id, name"` without quoting. Tokens with no prior argument and no positional definition still throw.
 
+A following short `-x` flag is treated as a boundary rather than consumed as a value, so `--distinct -m count` yields `{ distinct: "true", mode: "count" }`. When argument definitions are provided, an unknown `--name` throws `InvalidArgumentsError`.
+
 Wrapped in [`CommandArguments`](arguments/index.md) with typed accessors.
+
+## Pipe operator (`|`)
+
+When the `|` character appears between command tokens, the input line is treated as a pipeline. Segments are split at `|`, resolved independently, and executed left-to-right. Each segment's structured output becomes the next segment's input.
+
+### Declaring pipeline participation
+
+Commands opt in via two constructor arguments (or the corresponding overloads of the [`command()`](commands/index.md#command) factory):
+
+```ts
+class MyProducer extends Command {
+    constructor() {
+        super('produce', 'Produces items', [], undefined,
+            PipelineInputAcceptance.None,    // does not accept pipe input
+            true                             // provides pipe output
+        );
+    }
+    async execute(ctx) {
+        ctx.output.submit({ id: 1, name: 'Alice' });
+        ctx.output.submit({ id: 2, name: 'Bob' });
+    }
+}
+
+class MyConsumer extends Command {
+    constructor() {
+        super('consume', 'Consumes items', [], undefined,
+            PipelineInputAcceptance.Array,   // receives all items at once
+            false                             // does not provide output
+        );
+    }
+    async execute(_ctx, args) {
+        const items = await args.requirePipelineArray();
+        for (const item of items) { /* ... */ }
+    }
+}
+```
+
+Using the factory:
+
+```ts
+const producer = command('produce', async (ctx) => {
+    ctx.output.submit({ id: 1 });
+}, { description: 'Produces items', providesPipelineOutput: true });
+
+const consumer = command('consume', async (_ctx, args) => {
+    const items = await args.requirePipelineArray();
+    // ...
+}, { description: 'Consumes items', acceptsPipelineInput: PipelineInputAcceptance.Array });
+```
+
+### Pipeline context
+
+In a pipeline, `ctx.output` is set on the execution context for commands on the producing end:
+
+| Context field     | Set when...                                                    | API                              |
+|-------------------|----------------------------------------------------------------|----------------------------------|
+| `ctx.output`      | Command is on the producing end (left of `\|`)                  | `.submit(object)` / `.submit(objects)` |
+
+A command can check `ctx.output !== undefined` to determine if it can produce pipeline output.
+
+Pipeline data is consumed through [`CommandArguments`](arguments/index.md) — there is no `ctx.input`. Use `args.requirePipelineArray()` (Array mode) or auto-mapped `args.require()` (Single mode).
+
+### PipelineInputAcceptance
+
+| Value               | Behaviour                                                   |
+| ------------------- | ----------------------------------------------------------- |
+| `None`              | Does not accept piped input (cannot be on right side of `|`) |
+| `Single`            | Invoked once per output item, sequentially. Pipeline object fields are auto-mapped to command arguments via `args.require()`. CLI `--name` values take precedence over pipeline fields. |
+| `Array`             | Receives **all** previous output as a single `Record<string, unknown>[]` via `args.requirePipelineArray()` |
+
+### Output capture
+
+Commands emit structured output by calling `ctx.output.submit(object)` or `ctx.output.submit(objects)`. The terminal collects emitted objects after execution and routes them to the next segment. Only commands with `providesPipelineOutput: true` receive `ctx.output`.
+
+Input to `submit()` is always `Record<string, unknown>` (single object) or `Record<string, unknown>[]` (array of objects).
+
+### Validation
+
+- Every segment except the last must have `providesPipelineOutput: true`
+- Every segment after the first must have `acceptsPipelineInput !== None`
+- Empty segments (`| cmd`, `cmd |`, `cmd | | cmd`) throw `InvalidArgumentsError`
+
+### Example
+
+```bash
+# List tasks, filter by status, format as table
+> task list | task filter --status done | task format --style table
+
+# Each command declares its pipeline role:
+#   task list     → providesPipelineOutput: true
+#   task filter   → acceptsPipelineInput: Array, providesPipelineOutput: true
+#   task format   → acceptsPipelineInput: Single
+```
+
+```ts
+// Producer: emits objects via ctx.output.submit()
+class TaskListCommand extends Command {
+    constructor() {
+        super('list', 'List tasks', [], undefined,
+            PipelineInputAcceptance.None, true);
+    }
+    async execute(ctx: CommandContext) {
+        for (const task of fetchTasks()) {
+            ctx.output.submit({ id: task.id, title: task.title, status: task.status });
+        }
+    }
+}
+
+// Array consumer: receives all objects at once
+class TaskFilterCommand extends Command {
+    constructor() {
+        super('filter', 'Filter tasks', [
+            { name: 'status', schema: z.string() }
+        ], undefined, PipelineInputAcceptance.Array, true);
+    }
+    async execute(ctx: CommandContext, args: CommandArguments) {
+        const items = await args.requirePipelineArray();
+        const status = await args.require<string>('status');
+        for (const item of items) {
+            if (item.status === status) ctx.output.submit(item);
+        }
+    }
+}
+
+// Single consumer: pipeline fields auto-mapped to declared args
+class TaskFormatCommand extends Command {
+    constructor() {
+        super('format', 'Format tasks', [
+            { name: 'title', schema: z.string() },
+            { name: 'style', schema: z.enum(['table', 'json']) }
+        ], undefined, PipelineInputAcceptance.Single, false);
+    }
+    async execute(ctx: CommandContext, args: CommandArguments) {
+        const title = await args.require<string>('title');
+        const style = await args.require<string>('style');
+        ctx.stdout.write(formatLine(title, style));
+    }
+}
+```
+
+### Chaining
+
+Three (or more) segment pipelines work as expected. Each intermediate command must both accept input and provide output. The terminal captures and forwards output at each step.
 
 ## Tab completion
 
@@ -92,7 +237,7 @@ The [`Completer`](https://github.com/johanneslatzel/terminal/blob/main/src/compl
 
 Already-used flags are excluded from completions — if `--username` has been provided, it won't appear again in suggestions.
 
-When a definition's schema is a Zod enum (`z.enum([...])`), completions include the valid values: `--role [admin|user|guest]`. Enum values are read from Zod's `_zod.values` internal property, which propagates through `.optional()`, `.default()`, etc.
+When a definition's schema is a Zod enum (`z.enum([...])`), the flag name is completed as usual and the valid values are suggested after the flag: `--role ` followed by Tab shows `admin`, `user`, `guest`. Enum values are read from Zod's `_zod.values` internal property, which propagates through `.optional()`, `.default()`, etc.
 
 After typing `--flag ` (with trailing space), the completer switches to completing individual enum values instead of flag names. For example, `--role ` followed by pressing Tab shows `admin`, `user`, `guest`. Partial input is filtered: `--role a` → `admin`. This also works with short aliases (`-r a` → `admin`).
 
@@ -108,4 +253,5 @@ Errors propagate to `handleError`. Registered [`onError`](hooks/index.md#error-h
 
 [**Commands**](commands/index.md) — defining commands and arguments  
 [**Arguments**](arguments/index.md) — typed accessors and prompting  
-[**Hooks**](hooks/index.md) — lifecycle event reference
+[**Hooks**](hooks/index.md) — lifecycle event reference  
+[**Pipe operator**](architecture.md#pipe-operator-) — chaining commands with `|`

@@ -4,25 +4,32 @@ Commands are objects in a hierarchical tree. Every node extends [`Command`](clas
 
 ## Factories
 
-### `command(name, description, execute, aliases?)` / `command(name, description, argDefs, execute, aliases?)` {#command}
+### `command(name, execute, options?)` {#command}
 
-Returns a `Command` ready for [`terminal.register()`](../terminal/index.md#register). When the command takes no arguments, omit `argDefs` and pass the handler directly. Optional `aliases` provide alternate names.
+Returns a `Command` ready for [`terminal.register()`](../terminal/index.md#register). The `options` argument accepts `description`, `arguments`, `aliases`, `acceptsPipelineInput`, and `providesPipelineOutput`.
 
 ```ts
-command('greet', 'Say hello', (ctx) => ctx.stdout.write('Hello!\n'));
-command('deploy', 'Deploy the app', handler, ['d']); // alias: deploy via "d"
+command('greet', (ctx) => ctx.stdout.write('Hello!\n'), { description: 'Say hello' });
+command('deploy', handler, { description: 'Deploy the app', aliases: ['d'] });
+command('filter', async (_ctx, args) => {
+    const items = await args.requirePipelineArray();
+    // ...
+}, { acceptsPipelineInput: PipelineInputAcceptance.Array });
 ```
 
-### `container(name, description?, children?, aliases?)` {#container}
+### `container(name, options?)` {#container}
 
-Returns a `CommandContainer`. Children can also be added later via `.add()`.
+Returns a `CommandContainer`. The `options` object accepts `description`, `children`, and `aliases`. Children can also be added later via `.add()`.
 
 ```ts
-container('config', 'Configuration', [
-    command('get', 'Get a value', handler),
-    command('set', 'Set a value', handler)
-]);
-container('server', 'Server commands', [], ['srv']); // alias: server via "srv"
+container('config', {
+    description: 'Configuration',
+    children: [
+        command('get', 'Get a value', handler),
+        command('set', 'Set a value', handler)
+    ]
+});
+container('server', { description: 'Server commands', aliases: ['srv'] });
 ```
 
 ### `arg(name, description?, schema, position?, aliases?, secret?)` {#arg}
@@ -42,7 +49,7 @@ term.register(command('greet', '...', handler));
 Subcommands are added to a parent container via `.add()`:
 
 ```ts
-const cfg = container('config', 'Configuration');
+const cfg = container('config', { description: 'Configuration' });
 cfg.add(command('get', 'Get a value', handler));
 term.register(cfg);
 ```
@@ -58,13 +65,16 @@ term.register(cfg);
 
 Every command's `execute(ctx, args)` receives a `CommandContext`:
 
-| Property           | Description                           |
-| ------------------ | ------------------------------------- |
-| `terminal`         | The running Terminal instance         |
-| `stdout` / `stdin` | I/O streams                           |
-| `state`            | Shared mutable state between commands |
-| `logger`           | Console-compatible logger             |
-| `exit`             | Shorthand for `terminal.stop()`       |
+| Property           | Description                                                          |
+| ------------------ | -------------------------------------------------------------------- |
+| `terminal`         | The running Terminal instance                                        |
+| `stdout` / `stdin` | I/O streams                                                          |
+| `state`            | Shared mutable state between commands                                |
+| `logger`           | Console-compatible logger                                            |
+| `exit`             | Shorthand for `terminal.stop()`                                      |
+| `output`           | Pipeline output for the next `\|` segment — call `.submit()` to emit |
+
+Pipeline data is consumed through the [`CommandArguments`](../arguments/index.md) parameter `args`, not `ctx`. Use `args.requirePipelineArray()` (Array mode) or auto-mapped `args.require()` (Single mode).
 
 ---
 

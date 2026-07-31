@@ -1,18 +1,6 @@
 import { InvalidArgumentsError } from '../errors.js';
 import type { CommandArgumentDefinition } from '../command-arguments.js';
-
-/**
- * Build a map from alias → canonical argument name from arg definitions.
- */
-function buildAliasMap(argDefs?: CommandArgumentDefinition[]): Map<string, string> {
-    const map = new Map<string, string>();
-    for (const def of argDefs ?? []) {
-        for (const alias of def.aliases ?? []) {
-            map.set(alias, def.name);
-        }
-    }
-    return map;
-}
+import { buildAliasMap } from './alias-map.js';
 
 /**
  * Check whether a token looks like a short flag: `-x` (single dash, single non-digit char).
@@ -30,8 +18,8 @@ function isShortFlag(token: string): boolean {
  * Parse an array of tokens into a record of `--name value` pairs.
  *
  * - `--name value` produces `{ name: "value" }`
- * - `--flag` (no next token or next token starts with `--`) produces
- *   `{ flag: "true" }` (boolean-shorthand)
+ * - `--flag` (no next token, or the next token starts with `--` or is a
+ *   short `-x` flag) produces `{ flag: "true" }` (boolean-shorthand)
  * - `-x` (single dash, single non-digit char) is treated as a short alias;
  *   resolved to the canonical name via arg definition aliases.
  * - When `argDefs` is provided, tokens not starting with `--` are
@@ -45,7 +33,8 @@ function isShortFlag(token: string): boolean {
  * @returns A record mapping argument canonical names to their string values.
  * @throws {InvalidArgumentsError} When a token does not start with
  *   `--` (and no positional definition matches), an empty `--`
- *   is encountered, or an unknown single-dash flag is used.
+ *   is encountered, an unknown single-dash flag is used, or an
+ *   unknown `--name` is used while argument definitions are provided.
  */
 export function parseFlags(
     tokens: string[],
@@ -101,13 +90,21 @@ export function parseFlags(
         if (isShortFlag(token) && !argDefs?.find((d) => d.name === name)) {
             throw new InvalidArgumentsError(`Unknown flag "${token}"`);
         }
+        if (
+            !isShortFlag(token) &&
+            argDefs !== undefined &&
+            argDefs.length > 0 &&
+            !argDefs.find((d) => d.name === name)
+        ) {
+            throw new InvalidArgumentsError(`Unknown argument "--${name}"`);
+        }
 
         if (name in args) {
             throw new InvalidArgumentsError(`Duplicate argument "--${name}"`);
         }
 
         const next = tokens[i + 1];
-        if (next !== undefined && !next.startsWith('--')) {
+        if (next !== undefined && !(next.startsWith('--') || isShortFlag(next))) {
             args[name] = next;
             lastArgName = name;
             i++;

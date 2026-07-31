@@ -59,16 +59,6 @@ describe('CommandArguments', () => {
         });
     });
 
-    describe('raw', () => {
-        it('returns value for existing key', () => {
-            expect(makeArgs({ foo: 'bar' }).raw('foo')).toBe('bar');
-        });
-
-        it('returns undefined for missing key', () => {
-            expect(makeArgs({ foo: 'bar' }).raw('baz')).toBeUndefined();
-        });
-    });
-
     describe('no definition', () => {
         it('require throws when no definition exists', async () => {
             const args = new CommandArguments({ name: 'alice' }, null);
@@ -426,6 +416,12 @@ describe('CommandArguments', () => {
             await expect(args.requireSecret('password')).rejects.toThrow(InvalidArgumentsError);
         });
 
+        it('throws for an undefined argument without prompting', async () => {
+            const im = makeAnsweringInputManager({ password: 'hunter2' });
+            const args = new CommandArguments({}, im, []);
+            await expect(args.requireSecret('password')).rejects.toThrow('is not defined');
+        });
+
         it('throws when schema validation fails', async () => {
             const strictDefs: CommandArgumentDefinition[] = [
                 { name: 'pw', schema: z.string().min(10), secret: true }
@@ -442,17 +438,11 @@ describe('CommandArguments', () => {
         });
     });
 
-    describe('has and raw with no definitions', () => {
-        it('has returns true for present key without definitions', () => {
+    describe('has with no definitions', () => {
+        it('returns true for present key without definitions', () => {
             const args = new CommandArguments({ foo: 'bar' }, null);
             expect(args.has('foo')).toBe(true);
             expect(args.has('baz')).toBe(false);
-        });
-
-        it('raw returns value for present key without definitions', () => {
-            const args = new CommandArguments({ foo: 'bar' }, null);
-            expect(args.raw('foo')).toBe('bar');
-            expect(args.raw('baz')).toBeUndefined();
         });
     });
 });

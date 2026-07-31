@@ -50,16 +50,19 @@ export interface CommandArgumentDefinition {
  */
 export class CommandArguments {
     /**
-     * @param record      - Parsed `--name value` pairs.
-     * @param inputManager - InputManager for interactive prompting, or `null`
-     *                       to disable prompting and throw on missing args.
-     * @param argDefs     - Optional argument definitions used for schema-based
-     *                      validation. Looked up by name per accessor call.
+     * @param record        - Parsed `--name value` pairs.
+     * @param inputManager  - InputManager for interactive prompting, or `null`
+     *                        to disable prompting and throw on missing args.
+     * @param argDefs       - Optional argument definitions used for schema-based
+     *                        validation. Looked up by name per accessor call.
+     * @param pipelineInput - Pipeline input items (Array mode only).
+     *                        Available via {@link requirePipelineArray}.
      */
     constructor(
         private record: Record<string, string>,
         private inputManager: InputManager | null,
-        private argDefs?: CommandArgumentDefinition[]
+        private argDefs?: CommandArgumentDefinition[],
+        private pipelineInput?: Record<string, unknown>[]
     ) {}
 
     /**
@@ -68,15 +71,6 @@ export class CommandArguments {
      */
     has(name: string): boolean {
         return name in this.record;
-    }
-
-    /**
-     * Return the raw string value of an argument, or `undefined` if
-     * the argument was not provided.
-     * @param name - Argument name (without `--` prefix).
-     */
-    raw(name: string): string | undefined {
-        return this.record[name];
     }
 
     /**
@@ -141,8 +135,8 @@ export class CommandArguments {
      *   missing and no InputManager is available.
      */
     async requireSecret(name: string): Promise<string> {
-        const raw = await this.resolveSecret(name);
         const def = this.requireDef(name);
+        const raw = await this.resolveSecret(name);
         const parsed = def.schema.safeParse(raw);
         if (!parsed.success) {
             throw new InvalidArgumentsError(
@@ -194,6 +188,23 @@ export class CommandArguments {
             );
         }
         return validated.data as boolean;
+    }
+
+    /**
+     * Return all pipeline input items as an array of records.
+     * Only available when the command's `acceptsPipelineInput` is `Array`.
+     *
+     * @throws {InvalidArgumentsError} When no pipeline input is available
+     *   (e.g. the command is in `None` or `Single` mode).
+     */
+    async requirePipelineArray(): Promise<Record<string, unknown>[]> {
+        if (!this.pipelineInput) {
+            throw new InvalidArgumentsError(
+                'Pipeline array input is not available. ' +
+                    'Ensure the command accepts pipeline input in Array mode.'
+            );
+        }
+        return this.pipelineInput;
     }
 
     private async resolve(name: string, useSecret = false): Promise<string> {

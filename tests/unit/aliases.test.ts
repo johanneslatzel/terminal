@@ -14,13 +14,13 @@ import { z } from 'zod';
 
 describe('command aliases', () => {
     it('creates a command with aliases via factory', () => {
-        const cmd = command('help', 'Show help', vi.fn(), ['h', '?']);
+        const cmd = command('help', vi.fn(), { description: 'Show help', aliases: ['h', '?'] });
         expect(cmd.name()).toBe('help');
         expect(cmd.aliases()).toEqual(['h', '?']);
     });
 
     it('creates a command without aliases', () => {
-        const cmd = command('greet', '', vi.fn());
+        const cmd = command('greet', vi.fn());
         expect(cmd.aliases()).toEqual([]);
     });
 
@@ -37,24 +37,24 @@ describe('command aliases', () => {
     });
 
     it('rejects empty alias', () => {
-        expect(() => command('x', '', vi.fn(), [''])).toThrow(InvalidArgumentsError);
-        expect(() => command('x', '', vi.fn(), [''])).toThrow('alias cannot be empty');
+        expect(() => command('x', vi.fn(), { aliases: [''] })).toThrow(InvalidArgumentsError);
+        expect(() => command('x', vi.fn(), { aliases: [''] })).toThrow('alias cannot be empty');
     });
 
     it('rejects alias with whitespace', () => {
-        expect(() => command('x', '', vi.fn(), ['bad alias'])).toThrow(InvalidArgumentsError);
-        expect(() => command('x', '', vi.fn(), ['bad alias'])).toThrow('whitespace');
+        expect(() => command('x', vi.fn(), { aliases: ['bad alias'] })).toThrow(InvalidArgumentsError);
+        expect(() => command('x', vi.fn(), { aliases: ['bad alias'] })).toThrow('whitespace');
     });
 
     it('matches on canonical name', () => {
-        const cmd = command('help', '', vi.fn(), ['h']);
+        const cmd = command('help', vi.fn(), { aliases: ['h'] });
         expect(cmd.matches('help')).toBe(true);
         expect(cmd.matches('h')).toBe(true);
         expect(cmd.matches('other')).toBe(false);
     });
 
     it('creates container with aliases', () => {
-        const ns = container('config', 'Config', [], ['cfg']);
+        const ns = container('config', { description: 'Config', aliases: ['cfg'] });
         expect(ns.name()).toBe('config');
         expect(ns.aliases()).toEqual(['cfg']);
         expect(ns.matches('config')).toBe(true);
@@ -62,24 +62,24 @@ describe('command aliases', () => {
     });
 
     it('accepts valid aliases', () => {
-        expect(() => command('valid', '', vi.fn(), ['v', 'V'])).not.toThrow();
+        expect(() => command('valid', vi.fn(), { aliases: ['v', 'V'] })).not.toThrow();
     });
 
     it('rejects duplicate alias in same command', () => {
-        expect(() => command('x', '', vi.fn(), ['a', 'a'])).toThrow(InvalidArgumentsError);
-        expect(() => command('x', '', vi.fn(), ['a', 'a'])).toThrow('Duplicate alias');
+        expect(() => command('x', vi.fn(), { aliases: ['a', 'a'] })).toThrow(InvalidArgumentsError);
+        expect(() => command('x', vi.fn(), { aliases: ['a', 'a'] })).toThrow('Duplicate alias');
     });
 
     it('rejects alias matching own name', () => {
-        expect(() => command('help', '', vi.fn(), ['help'])).toThrow(InvalidArgumentsError);
-        expect(() => command('help', '', vi.fn(), ['help'])).toThrow('redundant');
+        expect(() => command('help', vi.fn(), { aliases: ['help'] })).toThrow(InvalidArgumentsError);
+        expect(() => command('help', vi.fn(), { aliases: ['help'] })).toThrow('redundant');
     });
 });
 
 describe('CommandTree with aliases', () => {
     it('finds command by alias', () => {
         const tree = new CommandTree();
-        tree.add(command('help', '', vi.fn(), ['h', '?']));
+        tree.add(command('help', vi.fn(), { aliases: ['h', '?'] }));
         const result = tree.find(['h']);
         expect(result).not.toBeNull();
         expect(result!.command.name()).toBe('help');
@@ -87,8 +87,8 @@ describe('CommandTree with aliases', () => {
 
     it('finds nested command by alias', () => {
         const tree = new CommandTree();
-        const sub = command('start', '', vi.fn(), ['s']);
-        const ns = container('server', '', [sub], ['srv']);
+        const sub = command('start', vi.fn(), { aliases: ['s'] });
+        const ns = container('server', { children: [sub], aliases: ['srv'] });
         tree.add(ns);
         const result = tree.find(['srv', 's']);
         expect(result).not.toBeNull();
@@ -97,14 +97,14 @@ describe('CommandTree with aliases', () => {
 
     it('returns null for unknown alias', () => {
         const tree = new CommandTree();
-        tree.add(command('help', '', vi.fn(), ['h']));
+        tree.add(command('help', vi.fn(), { aliases: ['h'] }));
         expect(tree.find(['unknown'])).toBeNull();
     });
 
     it('suggests aliases in findSuggestions', () => {
         const tree = new CommandTree();
-        tree.add(command('help', '', vi.fn(), ['h', '?']));
-        tree.add(command('history', '', vi.fn(), ['hist']));
+        tree.add(command('help', vi.fn(), { aliases: ['h', '?'] }));
+        tree.add(command('history', vi.fn(), { aliases: ['hist'] }));
         const suggestions = tree.findSuggestions('h');
         expect(suggestions).toContain('h');
         expect(suggestions).toContain('hist');
@@ -113,20 +113,20 @@ describe('CommandTree with aliases', () => {
 
     it('rejects duplicate alias across sibling commands', () => {
         const tree = new CommandTree();
-        tree.add(command('help', '', vi.fn(), ['h']));
-        expect(() => tree.add(command('history', '', vi.fn(), ['h']))).toThrow(
+        tree.add(command('help', vi.fn(), { aliases: ['h'] }));
+        expect(() => tree.add(command('history', vi.fn(), { aliases: ['h'] }))).toThrow(
             InvalidArgumentsError
         );
-        expect(() => tree.add(command('history', '', vi.fn(), ['h']))).toThrow('conflicts');
+        expect(() => tree.add(command('history', vi.fn(), { aliases: ['h'] }))).toThrow('conflicts');
     });
 
     it('rejects alias colliding with sibling canonical name', () => {
         const tree = new CommandTree();
-        tree.add(command('greet', '', vi.fn()));
-        expect(() => tree.add(command('sayhi', '', vi.fn(), ['greet']))).toThrow(
+        tree.add(command('greet', vi.fn()));
+        expect(() => tree.add(command('sayhi', vi.fn(), { aliases: ['greet'] }))).toThrow(
             InvalidArgumentsError
         );
-        expect(() => tree.add(command('sayhi', '', vi.fn(), ['greet']))).toThrow('conflicts');
+        expect(() => tree.add(command('sayhi', vi.fn(), { aliases: ['greet'] }))).toThrow('conflicts');
     });
 });
 
@@ -136,40 +136,40 @@ describe('CommandTree with aliases', () => {
 
 describe('argument aliases', () => {
     it('creates arg def with aliases via factory', () => {
-        const def = arg('name', 'Your name', z.string(), undefined, ['n']);
+        const def = arg('name', z.string(), { description: 'Your name', aliases: ['n'] });
         expect(def.name).toBe('name');
         expect(def.aliases).toEqual(['n']);
     });
 
     it('arg factory omits aliases when not provided', () => {
-        const def = arg('name', '', z.string());
+        const def = arg('name', z.string());
         expect(def.aliases).toBeUndefined();
     });
 
     it('rejects empty arg alias', () => {
-        expect(() => arg('x', '', z.string(), undefined, [''])).toThrow(InvalidArgumentsError);
-        expect(() => arg('x', '', z.string(), undefined, [''])).toThrow('alias cannot be empty');
+        expect(() => arg('x', z.string(), { aliases: [''] })).toThrow(InvalidArgumentsError);
+        expect(() => arg('x', z.string(), { aliases: [''] })).toThrow('alias cannot be empty');
     });
 
     it('rejects arg alias with whitespace', () => {
-        expect(() => arg('x', '', z.string(), undefined, ['bad alias'])).toThrow(
+        expect(() => arg('x', z.string(), { aliases: ['bad alias'] })).toThrow(
             InvalidArgumentsError
         );
-        expect(() => arg('x', '', z.string(), undefined, ['bad alias'])).toThrow('whitespace');
+        expect(() => arg('x', z.string(), { aliases: ['bad alias'] })).toThrow('whitespace');
     });
 
     it('rejects duplicate arg alias in same definition', () => {
-        expect(() => arg('x', '', z.string(), undefined, ['a', 'a'])).toThrow(
+        expect(() => arg('x', z.string(), { aliases: ['a', 'a'] })).toThrow(
             InvalidArgumentsError
         );
-        expect(() => arg('x', '', z.string(), undefined, ['a', 'a'])).toThrow('Duplicate');
+        expect(() => arg('x', z.string(), { aliases: ['a', 'a'] })).toThrow('Duplicate');
     });
 
     it('rejects arg alias matching own name', () => {
-        expect(() => arg('name', '', z.string(), undefined, ['name'])).toThrow(
+        expect(() => arg('name', z.string(), { aliases: ['name'] })).toThrow(
             InvalidArgumentsError
         );
-        expect(() => arg('name', '', z.string(), undefined, ['name'])).toThrow('redundant');
+        expect(() => arg('name', z.string(), { aliases: ['name'] })).toThrow('redundant');
     });
 
     it('rejects arg alias colliding with another arg canonical name', () => {
@@ -178,8 +178,8 @@ describe('argument aliases', () => {
                 new (class extends Command {
                     constructor() {
                         super('test', '', [
-                            arg('name', '', z.string(), undefined, ['n']),
-                            arg('n', '', z.string())
+                            arg('name', z.string(), { aliases: ['n'] }),
+                            arg('n', z.string())
                         ]);
                     }
                     async execute() {}
@@ -190,8 +190,8 @@ describe('argument aliases', () => {
                 new (class extends Command {
                     constructor() {
                         super('test', '', [
-                            arg('name', '', z.string(), undefined, ['n']),
-                            arg('n', '', z.string())
+                            arg('name', z.string(), { aliases: ['n'] }),
+                            arg('n', z.string())
                         ]);
                     }
                     async execute() {}
@@ -205,8 +205,8 @@ describe('argument aliases', () => {
                 new (class extends Command {
                     constructor() {
                         super('test', '', [
-                            arg('a', '', z.string(), undefined, ['x']),
-                            arg('b', '', z.string(), undefined, ['x'])
+                            arg('a', z.string(), { aliases: ['x'] }),
+                            arg('b', z.string(), { aliases: ['x'] })
                         ]);
                     }
                     async execute() {}
@@ -283,39 +283,39 @@ describe('validateArgDefAliases edge cases', () => {
 
     it('rejects three-way duplicate alias', () => {
         expect(() => validateArgDefAliases([
-            arg('x', '', z.string(), undefined, ['dup']),
-            arg('y', '', z.string(), undefined, ['dup']),
-            arg('z', '', z.string(), undefined, ['dup'])
+            arg('x', z.string(), { aliases: ['dup'] }),
+            arg('y', z.string(), { aliases: ['dup'] }),
+            arg('z', z.string(), { aliases: ['dup'] })
         ], 'cmd')).toThrow('Duplicate alias');
     });
 
     it('rejects alias colliding with positional arg canonical name', () => {
         expect(() => validateArgDefAliases([
-            arg('name', '', z.string(), 0, ['n']),
-            arg('n', '', z.string(), 1)
+            arg('name', z.string(), { position: 0, aliases: ['n'] }),
+            arg('n', z.string(), { position: 1 })
         ], 'cmd')).toThrow('Duplicate alias');
     });
 
     it('rejects when alias matches reserved name across multiple defs', () => {
         expect(() => validateArgDefAliases([
-            arg('x', '', z.string(), undefined, ['a']),
-            arg('a', '', z.string(), undefined, ['x']),
-            arg('b', '', z.string(), undefined, ['x'])
+            arg('x', z.string(), { aliases: ['a'] }),
+            arg('a', z.string(), { aliases: ['x'] }),
+            arg('b', z.string(), { aliases: ['x'] })
         ], 'cmd')).toThrow('Duplicate alias');
     });
 
     it('accepts defs where alias happens to match command name', () => {
         expect(() => validateArgDefAliases([
-            arg('config', '', z.string(), undefined, ['cfg'])
+            arg('config', z.string(), { aliases: ['cfg'] })
         ], 'cfg')).not.toThrow();
     });
 });
 
 describe('parseFlags with arg aliases', () => {
     const defs = [
-        arg('name', 'Your name', z.string(), undefined, ['n']),
-        arg('verbose', 'Verbose output', z.boolean(), undefined, ['v']),
-        arg('output', 'Output file', z.string(), undefined, ['outfile', 'o'])
+        arg('name', z.string(), { description: 'Your name', aliases: ['n'] }),
+        arg('verbose', z.boolean(), { description: 'Verbose output', aliases: ['v'] }),
+        arg('output', z.string(), { description: 'Output file', aliases: ['outfile', 'o'] })
     ];
 
     it('resolves --alias to canonical name', () => {
@@ -350,7 +350,7 @@ describe('parseFlags with arg aliases', () => {
     });
 
     it('does not treat -digit as short flag', () => {
-        const posDefs = [arg('count', '', z.number(), 0)];
+        const posDefs = [arg('count', z.number(), { position: 0 })];
         expect(parseFlags(['-1'], posDefs)).toEqual({ count: '-1' });
     });
 
@@ -364,8 +364,8 @@ describe('parseFlags with arg aliases', () => {
 
     it('works alongside positional args', () => {
         const mixedDefs = [
-            arg('query', '', z.string(), 0),
-            arg('limit', '', z.number(), undefined, ['l'])
+            arg('query', z.string(), { position: 0 }),
+            arg('limit', z.number(), { aliases: ['l'] })
         ];
         expect(parseFlags(['hello', '-l', '10'], mixedDefs)).toEqual({
             query: 'hello',
@@ -381,8 +381,8 @@ describe('parseFlags with arg aliases', () => {
 describe('help output with aliases', () => {
     it('shows command aliases in global help', () => {
         const cmds = [
-            command('help', 'Show help', vi.fn(), ['h', '?']),
-            command('exit', 'Exit the shell', vi.fn(), ['quit', 'q'])
+            command('help', vi.fn(), { description: 'Show help', aliases: ['h', '?'] }),
+            command('exit', vi.fn(), { description: 'Exit the shell', aliases: ['quit', 'q'] })
         ];
         const output = globalHelp(cmds);
         expect(output).toContain('help (h, ?)');
@@ -390,7 +390,7 @@ describe('help output with aliases', () => {
     });
 
     it('shows command aliases in command help', () => {
-        const cmd = command('deploy', 'Deploy the app', vi.fn(), ['d']);
+        const cmd = command('deploy', vi.fn(), { description: 'Deploy the app', aliases: ['d'] });
         const output = commandHelp(cmd);
         expect(output).toContain('deploy (d)');
     });
@@ -398,12 +398,14 @@ describe('help output with aliases', () => {
     it('shows arg aliases in command help', () => {
         const cmd = command(
             'greet',
-            'Greets',
-            [
-                arg('name', 'Your name', z.string(), undefined, ['n']),
-                arg('verbose', 'Verbose', z.boolean(), undefined, ['v'])
-            ],
-            vi.fn()
+            vi.fn(),
+            {
+                description: 'Greets',
+                arguments: [
+                    arg('name', z.string(), { description: 'Your name', aliases: ['n'] }),
+                    arg('verbose', z.boolean(), { description: 'Verbose', aliases: ['v'] })
+                ]
+            }
         );
         const output = commandHelp(cmd);
         expect(output).toContain('(-n)');
@@ -413,30 +415,31 @@ describe('help output with aliases', () => {
     it('shows multi-char arg alias with -- prefix', () => {
         const cmd = command(
             'build',
-            'Build',
-            [arg('output', 'Output', z.string(), undefined, ['outfile'])],
-            vi.fn()
+            vi.fn(),
+            {
+                arguments: [arg('output', z.string(), { description: 'Output', aliases: ['outfile'] })]
+            }
         );
         const output = commandHelp(cmd);
         expect(output).toContain('--output (--outfile)');
     });
 
     it('shows subcommand aliases in container help', () => {
-        const sub = command('start', 'Start the server', vi.fn(), ['s']);
-        const ns = container('server', 'Server commands', [sub]);
+        const sub = command('start', vi.fn(), { description: 'Start the server', aliases: ['s'] });
+        const ns = container('server', { description: 'Server commands', children: [sub] });
         const output = commandHelp(ns);
         expect(output).toContain('start (s)');
     });
 
     it('resolves command by alias in scoped help', () => {
-        const cmds = [command('help', 'Show help', vi.fn(), ['h'])];
+        const cmds = [command('help', vi.fn(), { description: 'Show help', aliases: ['h'] })];
         const resolved = resolveCommand(cmds, ['h']);
         expect(resolved).not.toBeUndefined();
         expect(resolved!.name()).toBe('help');
     });
 
     it('returns undefined for unknown alias in scoped help', () => {
-        const cmds = [command('help', '', vi.fn(), ['h'])];
+        const cmds = [command('help', vi.fn(), { aliases: ['h'] })];
         expect(resolveCommand(cmds, ['x'])).toBeUndefined();
     });
 });
@@ -450,13 +453,15 @@ describe('integration', () => {
         const tree = new CommandTree();
         const deployCmd = command(
             'deploy',
-            'Deploy the app',
-            [
-                arg('environment', 'Target environment', z.string(), undefined, ['e']),
-                arg('version', 'Release version', z.string(), undefined, ['v'])
-            ],
             vi.fn(),
-            ['d']
+            {
+                description: 'Deploy the app',
+                arguments: [
+                    arg('environment', z.string(), { description: 'Target environment', aliases: ['e'] }),
+                    arg('version', z.string(), { description: 'Release version', aliases: ['v'] })
+                ],
+                aliases: ['d']
+            }
         );
 
         tree.add(deployCmd);

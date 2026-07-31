@@ -162,6 +162,7 @@ describe('parseFlags', () => {
 
     it('positional defs take priority over bare token grouping', () => {
         const defs: CommandArgumentDefinition[] = [
+            { name: 'fields', schema: { safeParse: () => ({ success: true, data: '' }) } as any },
             { name: 'query', position: 0, schema: { safeParse: () => ({ success: true, data: '' }) } as any }
         ];
         expect(parseFlags(['--fields', 'id', 'name', 'hello'], defs)).toEqual({
@@ -189,6 +190,37 @@ describe('parseFlags', () => {
             { name: 'verbose', schema: { safeParse: () => ({ success: true, data: false }) } as any }
         ];
         expect(parseFlags(['--verbose', 'true'], defs)).toEqual({ verbose: 'true' });
+    });
+
+    it('does not consume a short flag as the value of a boolean flag', () => {
+        const defs: CommandArgumentDefinition[] = [
+            { name: 'distinct', schema: { safeParse: () => ({ success: true, data: true }) } as any },
+            { name: 'mode', aliases: ['m'], schema: { safeParse: () => ({ success: true, data: '' }) } as any },
+            { name: 'attribute', aliases: ['a'], schema: { safeParse: () => ({ success: true, data: '' }) } as any }
+        ];
+        expect(parseFlags(['--distinct', '-m', 'count', '-a', 'status'], defs)).toEqual({
+            distinct: 'true',
+            mode: 'count',
+            attribute: 'status'
+        });
+    });
+
+    it('still consumes negative numbers as flag values', () => {
+        const defs: CommandArgumentDefinition[] = [
+            { name: 'round', schema: { safeParse: () => ({ success: true, data: -1 }) } as any }
+        ];
+        expect(parseFlags(['--round', '-1'], defs)).toEqual({ round: '-1' });
+    });
+
+    it('throws for an unknown long flag when definitions are provided', () => {
+        const defs: CommandArgumentDefinition[] = [
+            { name: 'known', schema: { safeParse: () => ({ success: true, data: '' }) } as any }
+        ];
+        expect(() => parseFlags(['--bogus'], defs)).toThrow('Unknown argument "--bogus"');
+    });
+
+    it('tolerates unknown long flags when no definitions are provided', () => {
+        expect(parseFlags(['--bogus', 'x'])).toEqual({ bogus: 'x' });
     });
 
     it('throws for duplicate arg aliases across different definitions', () => {

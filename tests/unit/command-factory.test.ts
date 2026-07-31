@@ -10,7 +10,7 @@ import { z } from 'zod';
 describe('command', () => {
     it('creates a Command-like object with name and description', () => {
         const fn = vi.fn();
-        const cmd = command('hello', 'Says hello', fn);
+        const cmd = command('hello', fn, { description: 'Says hello' });
         expect(cmd.name()).toBe('hello');
         expect(cmd.description()).toBe('Says hello');
         expect(cmd.definitions()).toEqual([]);
@@ -18,7 +18,7 @@ describe('command', () => {
 
     it('calls the handler on execute', async () => {
         const fn = vi.fn();
-        const cmd = command('test', '', fn);
+        const cmd = command('test', fn);
         await cmd.execute({} as unknown as CommandContext, {} as unknown as CommandArguments);
         expect(fn).toHaveBeenCalledOnce();
     });
@@ -27,28 +27,36 @@ describe('command', () => {
         const defs: CommandArgumentDefinition[] = [
             { name: 'name', schema: z.string(), description: 'Who' }
         ];
-        const cmd = command('greet', '', defs, vi.fn());
+        const cmd = command('greet', vi.fn(), { arguments: defs });
         expect(cmd.definitions()).toHaveLength(1);
         expect(cmd.definitions()[0]!.name).toBe('name');
     });
 
+    it('returns a fresh copy from definitions()', () => {
+        const cmd = command('greet', vi.fn());
+        const first = cmd.definitions();
+        first.push({ name: 'name', schema: z.string(), description: 'Who' });
+        expect(cmd.definitions()).toEqual([]);
+        expect(cmd.definitions()).not.toBe(first);
+    });
+
     it('supports async handlers', async () => {
         const fn = vi.fn().mockResolvedValue(undefined);
-        const cmd = command('async', '', fn);
+        const cmd = command('async', fn);
         await cmd.execute({} as unknown as CommandContext, {} as unknown as CommandArguments);
         expect(fn).toHaveBeenCalledOnce();
     });
 
-    it('works without argDefs (overload A)', () => {
+    it('works without argDefs', () => {
         const fn = vi.fn();
-        const cmd = command('noargs', 'No arguments', fn);
+        const cmd = command('noargs', fn, { description: 'No arguments' });
         expect(cmd.name()).toBe('noargs');
         expect(cmd.definitions()).toEqual([]);
     });
 
     it('works without argDefs and with aliases', () => {
         const fn = vi.fn();
-        const cmd = command('noargs', 'No arguments', fn, ['n']);
+        const cmd = command('noargs', fn, { description: 'No arguments', aliases: ['n'] });
         expect(cmd.name()).toBe('noargs');
         expect(cmd.aliases()).toEqual(['n']);
         expect(cmd.definitions()).toEqual([]);
@@ -57,15 +65,15 @@ describe('command', () => {
 
 describe('container', () => {
     it('creates a CommandContainer with name and description', () => {
-        const ns = container('cfg', 'Config commands');
+        const ns = container('cfg', { description: 'Config commands' });
         expect(ns.name()).toBe('cfg');
         expect(ns.description()).toBe('Config commands');
         expect(ns.commands()).toEqual([]);
     });
 
     it('adds children when provided', () => {
-        const child = command('child', '', vi.fn());
-        const ns = container('parent', '', [child]);
+        const child = command('child', vi.fn());
+        const ns = container('parent', { children: [child] });
         expect(ns.commands()).toHaveLength(1);
         expect(ns.commands()[0]!.name()).toBe('child');
     });
@@ -74,79 +82,85 @@ describe('container', () => {
 describe('arg', () => {
     it('creates a CommandArgumentDefinition', () => {
         const schema = z.string();
-        const def = arg('name', 'Your name', schema);
+        const def = arg('name', schema, { description: 'Your name' });
         expect(def.name).toBe('name');
         expect(def.description).toBe('Your name');
         expect(def.schema).toBe(schema);
     });
 
     it('works without description', () => {
-        const def = arg('count', undefined, z.number());
+        const def = arg('count', z.number());
         expect(def.name).toBe('count');
         expect(def.description).toBeUndefined();
     });
 
     it('accepts optional position parameter', () => {
-        const def = arg('query', 'Search query', z.string(), 0);
+        const def = arg('query', z.string(), { description: 'Search query', position: 0 });
         expect(def.name).toBe('query');
         expect(def.position).toBe(0);
     });
 
     it('accepts optional secret flag', () => {
-        const def = arg('password', 'Your password', z.string(), undefined, undefined, true);
+        const def = arg('password', z.string(), { description: 'Your password', secret: true });
         expect(def.name).toBe('password');
         expect(def.secret).toBe(true);
+    });
+
+    it('accepts required option', () => {
+        const def = arg('mode', z.string(), { required: true });
+        expect(def.name).toBe('mode');
+        expect(def.required).toBe(true);
     });
 });
 
 describe('position validation', () => {
     it('accepts valid dense positions starting at 0', () => {
-        const defs = [arg('a', '', z.string(), 0), arg('b', '', z.string(), 1)];
-        expect(() => command('valid', '', defs, vi.fn())).not.toThrow();
+        const defs = [arg('a', z.string(), { position: 0 }), arg('b', z.string(), { position: 1 })];
+        expect(() => command('valid', vi.fn(), { arguments: defs })).not.toThrow();
     });
 
     it('accepts a single position 0', () => {
-        const defs = [arg('query', '', z.string(), 0)];
-        expect(() => command('single', '', defs, vi.fn())).not.toThrow();
+        const defs = [arg('query', z.string(), { position: 0 })];
+        expect(() => command('single', vi.fn(), { arguments: defs })).not.toThrow();
     });
 
     it('rejects duplicate positions', () => {
-        const defs = [arg('a', '', z.string(), 0), arg('b', '', z.string(), 0)];
-        expect(() => command('dup', '', defs, vi.fn())).toThrow(InvalidArgumentsError);
-        expect(() => command('dup', '', defs, vi.fn())).toThrow('Duplicate position index 0');
+        const defs = [arg('a', z.string(), { position: 0 }), arg('b', z.string(), { position: 0 })];
+        expect(() => command('dup', vi.fn(), { arguments: defs })).toThrow(InvalidArgumentsError);
+        expect(() => command('dup', vi.fn(), { arguments: defs })).toThrow('Duplicate position index 0');
     });
 
     it('rejects non-dense positions with a gap', () => {
-        const defs = [arg('a', '', z.string(), 0), arg('c', '', z.string(), 2)];
-        expect(() => command('gap', '', defs, vi.fn())).toThrow(InvalidArgumentsError);
-        expect(() => command('gap', '', defs, vi.fn())).toThrow('Expected position 1, got 2');
+        const defs = [arg('a', z.string(), { position: 0 }), arg('c', z.string(), { position: 2 })];
+        expect(() => command('gap', vi.fn(), { arguments: defs })).toThrow(InvalidArgumentsError);
+        expect(() => command('gap', vi.fn(), { arguments: defs })).toThrow('Expected position 1, got 2');
     });
 
     it('rejects positions not starting at 0', () => {
-        const defs = [arg('a', '', z.string(), 1)];
-        expect(() => command('nozero', '', defs, vi.fn())).toThrow(InvalidArgumentsError);
-        expect(() => command('nozero', '', defs, vi.fn())).toThrow('Expected position 0, got 1');
+        const defs = [arg('a', z.string(), { position: 1 })];
+        expect(() => command('nozero', vi.fn(), { arguments: defs })).toThrow(InvalidArgumentsError);
+        expect(() => command('nozero', vi.fn(), { arguments: defs })).toThrow('Expected position 0, got 1');
     });
 
     it('accepts commands with no positional args', () => {
-        expect(() => command('none', '', vi.fn())).not.toThrow();
-        expect(() => command('none', '', [arg('a', '', z.string())], vi.fn())).not.toThrow();
+        expect(() => command('none', vi.fn())).not.toThrow();
+        expect(() => command('none', vi.fn(), { arguments: [arg('a', z.string())] })).not.toThrow();
     });
 });
 
 describe('command name validation', () => {
     it('rejects empty command name', () => {
-        expect(() => command('', 'desc', vi.fn())).toThrow(InvalidArgumentsError);
-        expect(() => command('', 'desc', vi.fn())).toThrow('Command name cannot be empty');
+        expect(() => command('', vi.fn(), { description: 'desc' })).toThrow(InvalidArgumentsError);
+        expect(() => command('', vi.fn(), { description: 'desc' })).toThrow('Command name cannot be empty');
     });
 
     it('rejects command name with spaces', () => {
-        expect(() => command('two words', 'desc', vi.fn())).toThrow(InvalidArgumentsError);
-        expect(() => command('two words', 'desc', vi.fn())).toThrow('whitespace');
+        expect(() => command('two words', vi.fn(), { description: 'desc' })).toThrow(InvalidArgumentsError);
+        expect(() => command('two words', vi.fn(), { description: 'desc' })).toThrow('whitespace');
     });
 
     it('rejects command name with tabs', () => {
-        expect(() => command('tab\tname', 'desc', vi.fn())).toThrow(InvalidArgumentsError);
+        expect(() => command('tab\tname', vi.fn(), { description: 'desc' })).toThrow(InvalidArgumentsError);
     });
 
     it('rejects empty name via Command subclass', () => {
@@ -168,10 +182,10 @@ describe('command name validation', () => {
     });
 
     it('rejects whitespace name via container', () => {
-        expect(() => container('bad name')).toThrow(InvalidArgumentsError);
+        expect(() => container('bad name', {})).toThrow(InvalidArgumentsError);
     });
 
     it('accepts valid command name', () => {
-        expect(() => command('valid', 'desc', vi.fn())).not.toThrow();
+        expect(() => command('valid', vi.fn(), { description: 'desc' })).not.toThrow();
     });
 });

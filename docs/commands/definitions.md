@@ -14,22 +14,24 @@
 
 ## Enum completion hints
 
-When an argument's schema is a Zod enum (`z.enum([...])`), tab-completion automatically
-appends `[val1|val2|val3]` to the flag suggestion:
+When an argument's schema is a Zod enum (`z.enum([...])`), tab-completion
+inserts the bare flag name (`--role`), never the enum values:
 
 ```
-> create --role [admin|user|guest]
+> create --role    # Tab → create --role
 ```
 
-This works with enums wrapped in `.optional()`, `.default()`, `.pipe()`, etc.
-
-After typing `--flag ` (with trailing space), the completer switches to completing
-individual enum values instead of flag names. Partial input is filtered:
+The enum values are completed after the flag, using the same mechanism as
+flag names and command names. After typing `--flag ` (with trailing space),
+the completer switches to completing individual enum values instead of flag
+names. Partial input is filtered:
 
 ```
 > create --role    # Tab → admin  user  guest
 > create --role a  # Tab → admin
 ```
+
+This works with enums wrapped in `.optional()`, `.default()`, `.pipe()`, etc.
 
 This also works with short aliases (`-r a` → `admin`).
 
@@ -37,7 +39,7 @@ This also works with short aliases (`-r a` → `admin`).
 arg('role', 'User role', z.enum(['admin', 'user', 'guest']));
 // --role    → admin | user | guest
 // --role a  → admin
-// --        → --role [admin|user|guest]
+// --        → --role
 ```
 
 ## `arg()` factory {#arg}
@@ -58,8 +60,8 @@ arg('password', 'API token', z.string().min(8), undefined, undefined, true);
 
 arg('role', 'User role', z.enum(['admin', 'user', 'guest']));
 // → { name: 'role', description: 'User role', schema: z.enum(['admin', 'user', 'guest']) }
-// --role [admin|user|guest]  (flag hint)
-// --role admin               (value completion)
+// --role          (flag completion)
+// --role admin    (value completion)
 ```
 
 ## Positional arguments

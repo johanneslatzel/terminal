@@ -117,7 +117,8 @@ export class InputManager {
 
     /**
      * Switch to **drop** mode: all incoming lines are silently discarded.
-     * Echo is suppressed on TTY (raw mode + stdin pause).
+     * On TTY, raw mode suppresses echo of keystrokes arriving while the
+     * command runs.
      */
     drop(): void {
         this.mode = InputMode.Drop;

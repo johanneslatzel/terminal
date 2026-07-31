@@ -4,6 +4,22 @@ import { InvalidArgumentsError } from './errors.js';
 import { validateAliases, validateArgDefAliases, OwnerType } from './validate-aliases.js';
 
 /**
+ * Describes how a command accepts piped input from the left side of `|`.
+ *
+ * - `None` — does not participate in pipelines (default).
+ * - `Single` — invoked once per output item, sequentially.
+ *   Pipeline object fields are auto-mapped to command arguments.
+ *   CLI `--name` values take precedence over pipeline fields.
+ * - `Array` — receives all output from the previous command as a single
+ *   `Record<string, unknown>[]`. Access via {@link CommandArguments.requirePipelineArray}.
+ */
+export enum PipelineInputAcceptance {
+    None = 'None',
+    Single = 'Single',
+    Array = 'Array'
+}
+
+/**
  * A leaf node in the command tree. Has no subcommand support.
  * Subclasses must implement {@link execute}.
  */
@@ -12,18 +28,24 @@ export abstract class Command {
     private _aliases: string[];
     private _description: string | undefined;
     private _definitions: CommandArgumentDefinition[];
+    private _acceptsPipelineInput: PipelineInputAcceptance;
+    private _providesPipelineOutput: boolean;
 
     /**
      * @param name        - Command name used for matching input tokens.
      * @param description - Short description shown in help output.
      * @param argDefs     - Argument definitions for `--name value` pairs.
      * @param aliases     - Alternate names for this command.
+     * @param acceptsPipelineInput - Whether this command accepts piped input.
+     * @param providesPipelineOutput - Whether this command provides piped output.
      */
     constructor(
         name: string,
         description?: string,
         argDefs?: CommandArgumentDefinition[],
-        aliases?: string[]
+        aliases?: string[],
+        acceptsPipelineInput: PipelineInputAcceptance = PipelineInputAcceptance.None,
+        providesPipelineOutput: boolean = false
     ) {
         if (name.length === 0) {
             throw new InvalidArgumentsError('Command name cannot be empty');
@@ -36,6 +58,8 @@ export abstract class Command {
         this._aliases = aliases ?? [];
         this._description = description;
         this._definitions = argDefs ?? [];
+        this._acceptsPipelineInput = acceptsPipelineInput;
+        this._providesPipelineOutput = providesPipelineOutput;
         this._validatePositions(name);
         validateArgDefAliases(argDefs ?? [], name);
     }
@@ -89,7 +113,25 @@ export abstract class Command {
 
     /** Argument definitions for this command. */
     definitions(): CommandArgumentDefinition[] {
-        return this._definitions;
+        return [...this._definitions];
+    }
+
+    /**
+     * Describes how this command consumes piped input when placed on the
+     * right side of `|`. Returns `None` by default (no pipeline participation).
+     */
+    acceptsPipelineInput(): PipelineInputAcceptance {
+        return this._acceptsPipelineInput;
+    }
+
+    /**
+     * Whether this command can produce structured output for the next
+     * pipeline segment. When `true`, the command calls
+     * {@link PipelineOutput.submit} via {@link CommandContext.output}
+     * during execution.
+     */
+    providesPipelineOutput(): boolean {
+        return this._providesPipelineOutput;
     }
 
     /**
@@ -139,6 +181,18 @@ export class CommandContainer extends Command {
     }
 }
 
+/**
+ * Write endpoint for sending structured output to the next `|` segment.
+ * Available on {@link CommandContext.output} when the command is on
+ * the producing end of a pipeline.
+ */
+export interface PipelineOutput {
+    /** Emit a single structured object. */
+    submit(object: Record<string, unknown>): void;
+    /** Emit multiple structured objects at once. */
+    submit(objects: Record<string, unknown>[]): void;
+}
+
 /** Context passed to every command's `execute()`. */
 export interface CommandContext {
     /** The running Terminal instance. */
@@ -153,6 +207,12 @@ export interface CommandContext {
     logger: Logger;
     /** Shortcut for `terminal.stop()`. */
     exit: () => void;
+    /**
+     * Pipeline output for the next `|` segment.
+     * Present when this command produces data for the pipeline.
+     * Use {@link PipelineOutput.submit} to emit structured objects.
+     */
+    output?: PipelineOutput;
 }
 
 /** Console-compatible logger interface. */

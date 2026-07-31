@@ -96,10 +96,13 @@ import { Terminal, command, container } from '@johannes.latzel/terminal';
 
 const term = new Terminal();
 term.register(
-    container('config', 'Configuration', [
-        command('get', 'Get a value', (ctx) => ctx.stdout.write('value\n')),
-        command('set', 'Set a value', (ctx) => ctx.stdout.write('ok\n'))
-    ])
+    container('config', {
+        description: 'Configuration',
+        children: [
+            command('get', 'Get a value', (ctx) => ctx.stdout.write('value\n')),
+            command('set', 'Set a value', (ctx) => ctx.stdout.write('ok\n'))
+        ]
+    })
 );
 term.start();
 ```

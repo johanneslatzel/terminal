@@ -1,22 +1,34 @@
 import * as readline from 'node:readline';
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
-import { dirname } from 'node:path';
 import { Transform } from 'node:stream';
 import { Mutex } from 'async-mutex';
-import { Command, type CommandContext, type TerminalOptions } from './types.js';
+import {
+    Command,
+    PipelineInputAcceptance,
+    type CommandContext,
+    type TerminalOptions
+} from './types.js';
 import { CommandTree } from './command-tree.js';
 import { tokenize } from './input/parser.js';
 import { parseFlags } from './input/args-parser.js';
 import { CommandArguments } from './command-arguments.js';
 import { Completer } from './completion/completer.js';
 import { CommandNotFoundError, InterruptedError } from './errors.js';
+import { HistoryStore } from './history.js';
 import { HelpCommand } from './commands/help.js';
 import { ExitCommand } from './commands/exit.js';
 import { ClearCommand } from './commands/clear.js';
+import { SelectCommand } from './commands/select.js';
+import { JsonCommand } from './commands/json.js';
+import { TableCommand } from './commands/table.js';
+import { SortCommand } from './commands/sort.js';
+import { ClipCommand } from './commands/clip.js';
+import { FilterCommand } from './commands/filter.js';
+import { AggregateCommand } from './commands/aggregate.js';
 import { Hook } from './hook.js';
 import { TerminalHookBuilder } from './terminal-hook-builder.js';
 import { InputManager } from './input-manager.js';
 import { CTRL_BACKSPACE, CTRL_W } from './keys.js';
+import { PipelineExecutor } from './pipeline/pipeline-executor.js';
 import {
     TypedHook,
     BeforeParseHook,
@@ -53,11 +65,12 @@ export class Terminal {
     private _onStartHooks: OnStartHook[] = [];
     private _onStopHooks: OnStopHook[] = [];
     private _onErrorHooks: OnErrorHook[] = [];
-    private _history: string[] = [];
     private mutex = new Mutex();
     private running = false;
     private inputManager: InputManager;
     private inputFilter: Transform | null = null;
+    private historyStore: HistoryStore;
+    private pipeline: PipelineExecutor;
     private static readonly DEFAULT_OPTIONS = {
         prompt: '> ',
         stdin: process.stdin,
@@ -95,6 +108,13 @@ export class Terminal {
             this.options.silentSigint
         );
         this.ctx = this.createContext();
+        this.historyStore = new HistoryStore(this.options.historySize);
+        this.pipeline = new PipelineExecutor(
+            this.ctx,
+            this.inputManager,
+            (tokens) => this.resolveCommand(tokens),
+            (command, args, ctx) => this.executeWithHooks(command, args, ctx)
+        );
         this.registerBuiltins();
     }
 
@@ -115,6 +135,13 @@ export class Terminal {
         this.register(new HelpCommand());
         this.register(new ExitCommand());
         this.register(new ClearCommand());
+        this.register(new SelectCommand());
+        this.register(new JsonCommand());
+        this.register(new TableCommand());
+        this.register(new SortCommand());
+        this.register(new ClipCommand());
+        this.register(new FilterCommand());
+        this.register(new AggregateCommand());
     }
 
     /**
@@ -208,38 +235,7 @@ export class Terminal {
      * `start()` — has no effect if called afterwards.
      */
     async loadHistory(): Promise<string[]> {
-        const historyPath = this.options.historyPath;
-        if (!historyPath) {
-            this._history = [];
-            return [];
-        }
-        try {
-            const raw = await readFile(historyPath, 'utf-8');
-            const parsed: unknown = JSON.parse(raw);
-            if (!Array.isArray(parsed)) {
-                this._history = [];
-                return [];
-            }
-
-            // Deduplicate: iterate newest-first, keep first occurrence
-            const seen = new Set<string>();
-            const deduped: string[] = [];
-            for (let i = parsed.length - 1; i >= 0; i--) {
-                const item = String(parsed[i]);
-                if (!seen.has(item)) {
-                    seen.add(item);
-                    deduped.push(item);
-                }
-            }
-            deduped.reverse(); // back to oldest-first order
-
-            const trimmed = deduped.slice(-this.options.historySize);
-            this._history = trimmed;
-            return trimmed;
-        } catch {
-            this._history = [];
-            return [];
-        }
+        return this.historyStore.load(this.options.historyPath);
     }
 
     /**
@@ -248,17 +244,7 @@ export class Terminal {
      * hasn't been started yet (no `rl`).
      */
     async saveHistory(): Promise<void> {
-        const historyPath = this.options.historyPath;
-        if (!historyPath) return;
-        if (this._history.length === 0) return;
-        const trimmed = this._history.slice(-this.options.historySize);
-        try {
-            await mkdir(dirname(historyPath), { recursive: true });
-            await writeFile(historyPath, JSON.stringify(trimmed, null, 2) + '\n', 'utf-8');
-        } catch {
-            // Silently ignore — file-write errors should not crash the
-            // terminal.
-        }
+        return this.historyStore.save(this.options.historyPath);
     }
 
     /**
@@ -318,8 +304,8 @@ export class Terminal {
             terminal: this.options.stdin.isTTY
         };
 
-        if (this._history.length > 0) {
-            rlOptions.history = [...this._history];
+        if (this.historyStore.entries.length > 0) {
+            rlOptions.history = this.historyStore.entries;
             rlOptions.removeHistoryDuplicates = true;
         }
 
@@ -378,25 +364,28 @@ export class Terminal {
                     return;
                 }
 
-                const resolved = this.resolveCommand(tokens);
-                const record = parseFlags(resolved.args, resolved.command.definitions());
-                const args = new CommandArguments(
-                    record,
-                    this.inputManager,
-                    resolved.command.definitions()
-                );
-                await this.executeWithHooks(resolved.command, args);
+                const pipeIndex = tokens.indexOf('|');
+                if (pipeIndex === -1) {
+                    const resolved = this.resolveCommand(tokens);
+                    const record = parseFlags(resolved.args, resolved.command.definitions());
+                    const pipelineInput =
+                        resolved.command.acceptsPipelineInput() === PipelineInputAcceptance.Array
+                            ? ([] as Record<string, unknown>[])
+                            : undefined;
+                    const args = new CommandArguments(
+                        record,
+                        this.inputManager,
+                        resolved.command.definitions(),
+                        pipelineInput
+                    );
+                    await this.executeWithHooks(resolved.command, args);
+                } else {
+                    await this.pipeline.execute(tokens);
+                }
             } catch (error) {
                 await this.handleError(error);
             } finally {
-                if (input.length > 0 && input !== this._history.at(-1)) {
-                    const idx = this._history.indexOf(input);
-                    if (idx !== -1) this._history.splice(idx, 1);
-                    this._history.push(input);
-                    if (this._history.length > this.options.historySize) {
-                        this._history = this._history.slice(-this.options.historySize);
-                    }
-                }
+                this.historyStore.record(input);
                 if (this.running) {
                     this.inputManager.restoreCommandMode();
                     this.inputManager.prompt();
@@ -434,12 +423,27 @@ export class Terminal {
         return resolved;
     }
 
-    private async executeWithHooks(command: Command, args: CommandArguments): Promise<void> {
+    /**
+     * Execute a command through the lifecycle hooks, optionally using a
+     * custom context (for pipeline execution). When no context is provided,
+     * the terminal's default context (`this.ctx`) is used.
+     *
+     * @param command - The command to execute.
+     * @param args    - Parsed arguments.
+     * @param ctx     - Optional execution context; used by pipelines to set
+     *                  `input` and `output` fields.
+     */
+    private async executeWithHooks(
+        command: Command,
+        args: CommandArguments,
+        ctx?: CommandContext
+    ): Promise<void> {
+        const execCtx = ctx ?? this.ctx;
         for (const hook of this._beforeExecuteHooks) {
-            if ((await hook.exec(command, this.ctx, args)) === false) return;
+            if ((await hook.exec(command, execCtx, args)) === false) return;
         }
 
-        const result = await command.execute(this.ctx, args);
+        const result = await command.execute(execCtx, args);
 
         for (const hook of this._afterExecuteHooks) {
             await hook.exec(result);

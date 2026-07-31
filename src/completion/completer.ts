@@ -1,6 +1,7 @@
-import { Command, CommandContainer } from '../types.js';
+import { Command, CommandContainer, PipelineInputAcceptance } from '../types.js';
 import { CommandTree } from '../command-tree.js';
 import { tokenize } from '../input/parser.js';
+import { buildAliasMap } from '../input/alias-map.js';
 import type { CommandArgumentDefinition } from '../command-arguments.js';
 
 /**
@@ -45,12 +46,7 @@ function isShortFlagPrefix(s: string): boolean {
  */
 function collectUsedFlags(prefix: string[], definitions: CommandArgumentDefinition[]): Set<string> {
     const used = new Set<string>();
-    const aliasMap = new Map<string, string>();
-    for (const def of definitions) {
-        for (const alias of def.aliases ?? []) {
-            aliasMap.set(alias, def.name);
-        }
-    }
+    const aliasMap = buildAliasMap(definitions);
 
     for (let i = 0; i < prefix.length; i++) {
         const token = prefix[i]!;
@@ -105,6 +101,40 @@ export class Completer {
         const partial = trailingSpace ? '' : tokens[tokens.length - 1]!;
         const prefix = trailingSpace ? tokens : tokens.slice(0, -1);
 
+        // Split the completed prefix into pipeline segments at `|` boundaries.
+        // After a `|` the completion context restarts at the root command
+        // level, so only the last segment drives the rest of the walk.
+        const segments: string[][] = [[]];
+        for (const token of prefix) {
+            if (token === '|') {
+                segments.push([]);
+            } else {
+                segments[segments.length - 1]!.push(token);
+            }
+        }
+
+        if (segments.length > 1) {
+            const lastSegment = segments[segments.length - 1]!;
+            if (lastSegment.length === 0) {
+                // The user just typed `|`: suggest commands that can consume
+                // pipeline input for the next stage of the pipeline.
+                const pipelineCommands = this.tree
+                    .getRoots()
+                    .filter(
+                        (command) => command.acceptsPipelineInput() !== PipelineInputAcceptance.None
+                    );
+                const matches = collectAllNames(pipelineCommands).filter((name) =>
+                    name.startsWith(partial)
+                );
+                return { matches, partial };
+            }
+            return this.completeSegment(lastSegment, partial, line);
+        }
+
+        return this.completeSegment(prefix, partial, line);
+    }
+
+    private completeSegment(prefix: string[], partial: string, line: string): Completion {
         let lastMatched: Command | null = null;
         let commands = this.tree.getRoots();
         for (const token of prefix) {
@@ -149,15 +179,11 @@ export class Completer {
                 const matches: string[] = [];
                 for (const def of defs) {
                     if (usedFlags.has(def.name)) continue;
-                    const enumVals = extractEnumValues(def.schema);
-                    const suffix =
-                        enumVals && enumVals.length > 0 ? ` [${enumVals.join('|')}]` : '';
-                    const candidate = `--${def.name}${suffix}`;
+                    const candidate = `--${def.name}`;
                     if (candidate.startsWith(flagPartial)) matches.push(candidate);
                     for (const alias of def.aliases ?? []) {
                         const aliasCandidate = alias.length === 1 ? `-${alias}` : `--${alias}`;
-                        if (aliasCandidate.startsWith(flagPartial))
-                            matches.push(aliasCandidate + suffix);
+                        if (aliasCandidate.startsWith(flagPartial)) matches.push(aliasCandidate);
                     }
                 }
                 return { matches, partial };
