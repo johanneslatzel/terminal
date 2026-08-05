@@ -1,6 +1,6 @@
 {
     "name": "@johannes.latzel/terminal",
-    "version": "0.4.0",
+    "version": "0.4.1",
     "description": "Tree-structured TypeScript terminal/shell engine with automatic help and completion",
     "license": "MIT",
     "files": [
@@ -53,7 +53,8 @@
         "test:coverage": "vitest run --coverage",
         "clean:pack": "rm -rf node_modules dist/ package-lock.json && npm cache clean --force && npm install && npm run verify && npm run build && npm pack",
         "clean:install": "rm -rf node_modules dist/ package-lock.json && npm cache clean --force && npm install && npm run verify",
-        "prepare": "husky"
+        "prepare": "husky",
+        "audit": "npm audit --audit-level=high"
     },
     "lint-staged": {
         "src/**/*.ts": [

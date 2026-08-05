@@ -264,6 +264,7 @@ function matches(item: Record<string, unknown>, cond: ParsedCondition, icase: bo
  * ```
  * cmd | filter role=admin,state=running | next_cmd
  * cmd | filter !name=~^X --any | next_cmd
+ * cmd | filter name=~^bot|^host | next_cmd
  * ```
  */
 export class FilterCommand extends Command {

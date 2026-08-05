@@ -64,6 +64,7 @@ Given `["config", "set", "--theme", "dark"]`:
 [`tokenize()`](https://github.com/johanneslatzel/terminal/blob/main/src/input/parser.ts) splits a raw line into tokens:
 
 - **Whitespace** — tokens separated by 1+ spaces/tabs/newlines; leading/trailing ignored
+- **Pipe** — `|` is not special during tokenization; it becomes a pipeline separator only as a standalone (whitespace-delimited) token. See [Pipe operator](#pipe-operator-)
 - **Quotes** — `"` and `'` produce a single token (quotes stripped). One type can appear inside the other: `"it's fine"` → `["it's fine"]`
 - **Escapes** — inside quotes, `\"` → `"`, `\\` → `\`
 - **Adjacent chars** — `foo"bar"` → `ParseError: Unexpected characters before quote: "foo"`
@@ -91,6 +92,14 @@ Wrapped in [`CommandArguments`](arguments/index.md) with typed accessors.
 ## Pipe operator (`|`)
 
 When the `|` character appears between command tokens, the input line is treated as a pipeline. Segments are split at `|`, resolved independently, and executed left-to-right. Each segment's structured output becomes the next segment's input.
+
+`|` only counts as a separator when it is its own token — i.e. separated from surrounding text by whitespace. A `|` glued to other characters is literal text inside that token:
+
+- `a | b` — pipeline: `a` then `b`
+- `a|b` — single token `a|b` (literal `|`)
+- `"a | b"` — single token `a | b`; quotes group whitespace but do not change `|` handling
+
+So a regex containing `|` needs no quoting: `filter name=~bot|b` passes `bot|b` to the regex engine. Conversely, a bare standalone `|` can never be passed as a literal argument value, even quoted.
 
 ### Declaring pipeline participation
 

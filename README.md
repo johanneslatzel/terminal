@@ -10,7 +10,7 @@
 [![CI](https://github.com/johanneslatzel/terminal/actions/workflows/ci.yml/badge.svg)](https://github.com/johanneslatzel/terminal/actions/workflows/ci.yml)
 [![Socket Badge](https://badge.socket.dev/npm/package/@johannes.latzel/terminal/latest)](https://badge.socket.dev/npm/package/@johannes.latzel/terminal/latest)
 
-Tree-structured TypeScript terminal/shell engine with automatic help, tab completion, `--flag` argument parsing, interactive prompting for missing required arguments, and a lifecycle hook system.
+Tree-structured TypeScript terminal/shell engine with automatic help, tab completion, `--flag` argument parsing, interactive prompting for missing required arguments, `|` pipelines, builtin commands, and a lifecycle hook system.
 
 ## Prerequisites
 

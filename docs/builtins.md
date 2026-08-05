@@ -216,6 +216,14 @@ Conditions are `key<operator>value`, matched against each object. Nested paths a
 | `key=~regex` | Regular expression match |
 | `key` | Key exists (non-null) |
 
+Regex values may contain the alternation `|` without quoting — the whole condition is a single token:
+
+```
+> cmd | filter name=~^bot|^host | next_cmd
+```
+
+Only a whitespace-delimited `|` starts a new pipeline stage.
+
 A leading `!` negates a single condition (`!role=admin`), and `!!` cancels out. `null`/missing values fail equality and relational conditions, pass `!=`, and are treated as empty strings for string operators.
 
 Conditions combine with AND by default. Use `--any` for OR, `--not` to invert the whole predicate, and `--icase` for case-insensitive string comparison:

@@ -14,7 +14,7 @@ term.start();
 - **[Arguments](arguments/index.md)** — typed accessors, prompting, zod schemas
 - **[Hooks](hooks/index.md)** — lifecycle events, error handling
 - **[Architecture](architecture.md)** — execution flow, input routing, pipe operator, tokenizer, resolution
-- **[Builtins](builtins.md)** — help, exit, clear
+- **[Builtins](builtins.md)** — help, exit, clear, select, json, table, sort, clip, filter, aggregate
 
 ## License
 
