@@ -33,10 +33,10 @@ names. Partial input is filtered:
 
 This works with enums wrapped in `.optional()`, `.default()`, `.pipe()`, etc.
 
-This also works with short aliases (`-r a` → `admin`).
+Short aliases work the same way (`-r a` → `admin`).
 
 ```ts
-arg('role', 'User role', z.enum(['admin', 'user', 'guest']));
+arg('role', z.enum(['admin', 'user', 'guest']), { description: 'User role' });
 // --role    → admin | user | guest
 // --role a  → admin
 // --        → --role
@@ -45,20 +45,20 @@ arg('role', 'User role', z.enum(['admin', 'user', 'guest']));
 ## `arg()` factory {#arg}
 
 ```ts
-arg('name', 'Who to greet', z.string().min(1));
+arg('name', z.string().min(1), { description: 'Who to greet' });
 // → { name: 'name', description: 'Who to greet', schema: z.string().min(1) }
 
-arg('name', 'Your name', z.string(), undefined, ['n']);
+arg('name', z.string(), { description: 'Your name', aliases: ['n'] });
 // → { name: 'name', description: 'Your name', schema: z.string(), aliases: ['n'] }
 
-arg('query', 'Search query', z.string(), 0);
+arg('query', z.string(), { description: 'Search query', position: 0 });
 // → { name: 'query', description: 'Search query', schema: z.string(), position: 0 }
 
-arg('password', 'API token', z.string().min(8), undefined, undefined, true);
+arg('password', z.string().min(8), { description: 'API token', secret: true });
 // → { name: 'password', description: 'API token', ..., secret: true }
 //   Prompts with hidden input when missing on the command line
 
-arg('role', 'User role', z.enum(['admin', 'user', 'guest']));
+arg('role', z.enum(['admin', 'user', 'guest']), { description: 'User role' });
 // → { name: 'role', description: 'User role', schema: z.enum(['admin', 'user', 'guest']) }
 // --role          (flag completion)
 // --role admin    (value completion)
@@ -76,14 +76,14 @@ Positions are consumed in index order. Duplicate or non-contiguous positions thr
 
 ## Schema patterns
 
-- **Strings** — `z.string()`. Use `.min(1)`, `.email()`, etc.
-- **Numbers** — `z.coerce.number()` (coerces from string input)
-- **Booleans** — `z.boolean()` (read with [`flag()`](../arguments/index.md#flag))
-- **Enums** — `z.enum(['a', 'b', 'c'])`
-- **Arrays** — `z.array(z.string())`, `z.array(z.coerce.number())`. Raw input is auto-split on commas before validation (see [`require<T>()`](../arguments/index.md#require)).
+- **Strings**: `z.string()`. Use `.min(1)`, `.email()`, etc.
+- **Numbers**: `z.coerce.number()` (coerces from string input)
+- **Booleans**: `z.boolean()` (read with [`flag()`](../arguments/index.md#flag))
+- **Enums**: `z.enum(['a', 'b', 'c'])`
+- **Arrays**: `z.array(z.string())`, `z.array(z.coerce.number())`. Raw input is auto-split on commas before validation (see [`require<T>()`](../arguments/index.md#require)).
 
 ---
 
-[**Commands**](index.md) — factory functions and registration  
-[**Classes**](classes.md) — explicit command subclasses  
-[**Arguments**](../arguments/index.md) — `require<T>()`, `flag()`, prompting
+- [Commands](index.md)
+- [Classes](classes.md)
+- [Arguments](../arguments/index.md)

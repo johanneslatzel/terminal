@@ -12,6 +12,16 @@
 
 Tree-structured TypeScript terminal/shell engine with automatic help, tab completion, `--flag` argument parsing, interactive prompting for missing required arguments, `|` pipelines, builtin commands, and a lifecycle hook system.
 
+## Features
+
+- hierarchical namespaces with dot-separated paths
+- command hints and tab completion of command names, `--flag`s, and enum values
+- typed arguments using zod schemas with interactive prompting for missing values
+- pipelines
+- builtin commands: help, exit, clear, select, json, table, sort, clip, filter, aggregate
+- lifecycle hooks
+- optional JSON history persistence across sessions
+
 ## Prerequisites
 
 - Node.js >= 18
@@ -28,7 +38,7 @@ Full documentation at **[johanneslatzel.github.io/terminal/](https://johanneslat
 
 ## License
 
-MIT — see [`LICENSE`](LICENSE).
+MIT - see [`LICENSE`](LICENSE).
 
 ## Contributing
 

@@ -1,5 +1,4 @@
 import * as readline from 'node:readline';
-import { Transform } from 'node:stream';
 import { Mutex } from 'async-mutex';
 import {
     Command,
@@ -27,7 +26,7 @@ import { AggregateCommand } from './commands/aggregate.js';
 import { Hook } from './hook.js';
 import { TerminalHookBuilder } from './terminal-hook-builder.js';
 import { InputManager } from './input-manager.js';
-import { CTRL_BACKSPACE, CTRL_W } from './keys.js';
+import { FilteredInputStream } from './input/filtered-input-stream.js';
 import { PipelineExecutor } from './pipeline/pipeline-executor.js';
 import {
     TypedHook,
@@ -68,7 +67,7 @@ export class Terminal {
     private mutex = new Mutex();
     private running = false;
     private inputManager: InputManager;
-    private inputFilter: Transform | null = null;
+    private inputFilter: FilteredInputStream | null = null;
     private historyStore: HistoryStore;
     private pipeline: PipelineExecutor;
     private static readonly DEFAULT_OPTIONS = {
@@ -277,17 +276,15 @@ export class Terminal {
              * which only removes a single character.  To get proper
              * word-level deletion we remap 0x08 to 0x17 (Ctrl+W), which
              * readline handles as `unix-word-rubout`.
+             *
+             * The filter also forwards `setRawMode`/`isTTY`/`isRaw` to the
+             * real stdin.  Without that, readline's `createInterface`
+             * (`terminal: true`) skips raw mode entirely (it guards on
+             * `typeof input.setRawMode === 'function'`) and the TTY stays in
+             * canonical mode — TAB and the editing keys are then eaten by the
+             * terminal driver.
              */
-            this.inputFilter = new Transform({
-                transform(chunk: Buffer, _encoding: BufferEncoding, callback) {
-                    const filtered = Buffer.alloc(chunk.length);
-                    for (let i = 0; i < chunk.length; i++) {
-                        const byte = chunk[i]!;
-                        filtered[i] = byte === CTRL_BACKSPACE ? CTRL_W.charCodeAt(0) : byte;
-                    }
-                    callback(null, filtered);
-                }
-            });
+            this.inputFilter = new FilteredInputStream(this.options.stdin);
             this.options.stdin.pipe(this.inputFilter, { end: false });
             input = this.inputFilter as unknown as NodeJS.ReadStream;
         }

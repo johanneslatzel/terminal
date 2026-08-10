@@ -14,27 +14,31 @@ const term = new Terminal({ prompt: 'λ ' });
 term.start();
 ```
 
-Type `help` to list builtins and `exit` to quit.
+Type `help` to list builtins, `exit` to quit.
 
 ## Add a command
 
-[`command()`](commands/index.md#command) defines a leaf command and returns a `Command` for `terminal.register()`:
+[`command()`](commands/index.md#command) creates a leaf command for `terminal.register()`:
 
 ```ts
 import { Terminal, command } from '@johannes.latzel/terminal';
 
 const term = new Terminal();
 term.register(
-    command('greet', 'Say hello', (ctx) => {
-        ctx.stdout.write('Hello, World!\n');
-    })
+    command(
+        'greet',
+        (ctx) => {
+            ctx.stdout.write('Hello, World!\n');
+        },
+        { description: 'Say hello' }
+    )
 );
 term.start();
 ```
 
 ## Add arguments
 
-Declare with [`arg()`](commands/definitions.md#arg) and zod schemas. Read with [`require<T>()`](arguments/index.md#require) (values) or [`flag()`](arguments/index.md#flag) (booleans):
+Declare arguments with [`arg()`](commands/definitions.md#arg) and zod schemas; read them with [`require<T>()`](arguments/index.md#require) (values) or [`flag()`](arguments/index.md#flag) (booleans):
 
 ```ts
 import { z } from 'zod';
@@ -44,18 +48,20 @@ const term = new Terminal();
 term.register(
     command(
         'greet',
-        'Say hello',
-        [
-            arg('name', 'Who to greet', z.string().min(1)),
-            arg('count', 'Times to greet', z.coerce.number().int().positive()),
-            arg('verbose', 'Show details', z.boolean())
-        ],
         async (ctx, args) => {
             const name = await args.require<string>('name');
             const count = args.has('count') ? await args.require<number>('count') : 1;
             if (await args.flag('verbose'))
                 ctx.stdout.write(`Greeting ${name} ${count} time(s)...\n`);
             for (let i = 0; i < count; i++) ctx.stdout.write(`Hello, ${name}!\n`);
+        },
+        {
+            description: 'Say hello',
+            arguments: [
+                arg('name', z.string().min(1), { description: 'Who to greet' }),
+                arg('count', z.coerce.number().int().positive(), { description: 'Times to greet' }),
+                arg('verbose', z.boolean(), { description: 'Show details' })
+            ]
         }
     )
 );
@@ -66,20 +72,20 @@ Tab completion suggests `--name`, `--count`, `--verbose`.
 
 ### Interactive prompting
 
-Missing required arguments prompt interactively when a readline is available:
+A missing required argument prompts when a readline is available:
 
 ```
 > greet --count 2
 argument [name]: Alice
 ```
 
-Without a readline (piped input), [`InvalidArgumentsError`](arguments/index.md#errors) is thrown instead.
+Without a readline, [`InvalidArgumentsError`](arguments/index.md#errors) is thrown.
 
-> **Note:** Use `flag()` for booleans — `--verbose` → `true`, `--verbose false` → `false`, absent → `false`. Don't use `z.coerce.boolean()` — `Boolean("false")` is `true`. Define boolean schemas as `z.boolean()`.
+Define boolean schemas as `z.boolean()`; `z.coerce.boolean()` parses `"false"` as `true`.
 
 ### Array arguments
 
-Arguments with an array schema (`z.array(...)`) auto-split on commas. Unquoted bare tokens after `--flag` are grouped onto the flag:
+Array schemas (`z.array(...)`) auto-split on commas; unquoted bare tokens after `--flag` group onto the flag:
 
 ```ts
 const fields = await args.require<string[]>('fields');
@@ -89,7 +95,7 @@ const fields = await args.require<string[]>('fields');
 
 ## Build a command tree
 
-Use [`container()`](commands/index.md#container) to group commands under a namespace:
+[`container()`](commands/index.md#container) groups commands under a namespace:
 
 ```ts
 import { Terminal, command, container } from '@johannes.latzel/terminal';
@@ -99,8 +105,8 @@ term.register(
     container('config', {
         description: 'Configuration',
         children: [
-            command('get', 'Get a value', (ctx) => ctx.stdout.write('value\n')),
-            command('set', 'Set a value', (ctx) => ctx.stdout.write('ok\n'))
+            command('get', (ctx) => ctx.stdout.write('value\n'), { description: 'Get a value' }),
+            command('set', (ctx) => ctx.stdout.write('ok\n'), { description: 'Set a value' })
         ]
     })
 );
@@ -116,7 +122,7 @@ ok
 
 ## Lifecycle hooks
 
-See [Hooks](hooks/index.md) for the full API.
+See [Hooks](hooks/index.md).
 
 ```ts
 term.hook()
@@ -127,9 +133,9 @@ term.hook()
     .do((error) => true); // suppress default error output
 ```
 
-Call `.dispose()` on the returned `Hook` to unregister.
+`.dispose()` unregisters a hook.
 
 ---
 
-[**Commands**](commands/index.md) — class-based commands, argument definitions, advanced patterns  
-[**API Reference**](terminal/index.md)
+- [Commands](commands/index.md)
+- [API Reference](terminal/index.md)

@@ -32,7 +32,7 @@ Hooks execute in registration order.
 
 Errors from any hook propagate to `handleError` (see [Architecture](../architecture.md#error-model)). `onError` hooks run first — the first returning `true` suppresses the error. If an `onError` callback itself throws, it's caught individually and remaining hooks still run. The terminal loop never crashes.
 
-Note: `InterruptedError` (Ctrl+C during interactive prompts) is handled before `onError` hooks run and does not trigger them.
+`InterruptedError` (Ctrl+C during interactive prompts) is handled before `onError` hooks run and does not trigger them.
 
 ## `dispose()` {#dispose}
 
@@ -40,6 +40,6 @@ Every `.do()` returns a `Hook`. Call `.dispose()` to unregister. Safe to call mu
 
 ---
 
-[**Terminal**](../terminal/index.md) — class reference, register, start/stop  
-[**Commands**](../commands/index.md) — defining commands  
-[**Arguments**](../arguments/index.md) — typed accessors
+- [Terminal](../terminal/index.md)
+- [Commands](../commands/index.md)
+- [Arguments](../arguments/index.md)

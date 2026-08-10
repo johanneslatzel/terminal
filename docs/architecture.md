@@ -6,13 +6,13 @@
 input → tokenize → resolve → parse flags → execute → output → loop
 ```
 
-1. **Input** — read from stdin via readline
-2. **Tokenize** — split into tokens (quoted strings, escapes)
-3. **Resolve** — walk command tree matching tokens to node names
-4. **Parse flags** — remaining tokens → `--name value` pairs
-5. **Execute** — matched command receives [`CommandArguments`](arguments/index.md) with typed accessors
-6. **Output** — command writes to `ctx.stdout`
-7. **Loop** — prompt again
+1. **Input**: read from stdin via readline
+2. **Tokenize**: split into tokens (quoted strings, escapes)
+3. **Resolve**: walk command tree matching tokens to node names
+4. **Parse flags**: remaining tokens → `--name value` pairs
+5. **Execute**: matched command receives [`CommandArguments`](arguments/index.md) with typed accessors
+6. **Output**: command writes to `ctx.stdout`
+7. **Loop**: prompt again
 
 ## Input management
 
@@ -38,11 +38,11 @@ When a command finishes executing, the input manager returns to whatever mode wa
 
 On TTY, the input manager controls character echoing via raw mode:
 
-- **Visible input** (`accept` + `acceptInput`) — raw mode off, characters echoed normally
-- **Hidden input** (`accept` + `acceptSecret`) — raw mode on, readline paused, input read character-by-character via [`readRawTerminal()`](https://github.com/johanneslatzel/terminal/blob/main/src/hidden-input.ts)
-- **Drop** — raw mode on, stdin paused, no echo at all
+- **Visible input** (`accept` + `acceptInput`): raw mode off, characters echoed normally
+- **Hidden input** (`accept` + `acceptSecret`): raw mode on, readline paused, input read character-by-character via [`readRawTerminal()`](https://github.com/johanneslatzel/terminal/blob/main/src/hidden-input.ts)
+- **Drop**: raw mode on, no echo; incoming lines are discarded
 
-On non-TTY, raw mode is unavailable. [`acceptSecret()`](arguments/index.md#requiresecret) falls back to visible input with echo disabled. Drop mode pauses the readline interface instead of toggling raw mode.
+On non-TTY, raw mode is unavailable. [`acceptSecret()`](arguments/index.md#requiresecret) falls back to visible input with echo disabled. Drop mode discards incoming lines instead of toggling raw mode.
 
 ## Command tree
 
@@ -63,13 +63,13 @@ Given `["config", "set", "--theme", "dark"]`:
 
 [`tokenize()`](https://github.com/johanneslatzel/terminal/blob/main/src/input/parser.ts) splits a raw line into tokens:
 
-- **Whitespace** — tokens separated by 1+ spaces/tabs/newlines; leading/trailing ignored
-- **Pipe** — `|` is not special during tokenization; it becomes a pipeline separator only as a standalone (whitespace-delimited) token. See [Pipe operator](#pipe-operator-)
-- **Quotes** — `"` and `'` produce a single token (quotes stripped). One type can appear inside the other: `"it's fine"` → `["it's fine"]`
-- **Escapes** — inside quotes, `\"` → `"`, `\\` → `\`
-- **Adjacent chars** — `foo"bar"` → `ParseError: Unexpected characters before quote: "foo"`
-- **Empty quotes** — `""` → `[""]`
-- **Unclosed quotes** — `"hello` → `ParseError: Unclosed " quote`
+- **Whitespace**: tokens separated by 1+ spaces/tabs/newlines; leading/trailing ignored
+- **Pipe**: `|` is not special during tokenization; it becomes a pipeline separator only as a standalone (whitespace-delimited) token. See [Pipe operator](#pipe-operator)
+- **Quotes**: `"` and `'` produce a single token (quotes stripped). One type can appear inside the other: `"it's fine"` → `["it's fine"]`
+- **Escapes**: inside quotes, `\"` → `"`, `\\` → `\`
+- **Adjacent chars**: `foo"bar"` → `ParseError: Unexpected characters before quote: "foo"`
+- **Empty quotes**: `""` → `[""]`
+- **Unclosed quotes**: `"hello` → `ParseError: Unclosed " quote`
 
 ## Argument parsing
 
@@ -95,9 +95,9 @@ When the `|` character appears between command tokens, the input line is treated
 
 `|` only counts as a separator when it is its own token — i.e. separated from surrounding text by whitespace. A `|` glued to other characters is literal text inside that token:
 
-- `a | b` — pipeline: `a` then `b`
-- `a|b` — single token `a|b` (literal `|`)
-- `"a | b"` — single token `a | b`; quotes group whitespace but do not change `|` handling
+- `a | b`: pipeline, `a` then `b`
+- `a|b`: single token `a|b` (literal `|`)
+- `"a | b"`: single token `a | b`; quotes group whitespace but do not change `|` handling
 
 So a regex containing `|` needs no quoting: `filter name=~bot|b` passes `bot|b` to the regex engine. Conversely, a bare standalone `|` can never be passed as a literal argument value, even quoted.
 
@@ -246,9 +246,7 @@ The [`Completer`](https://github.com/johanneslatzel/terminal/blob/main/src/compl
 
 Already-used flags are excluded from completions — if `--username` has been provided, it won't appear again in suggestions.
 
-When a definition's schema is a Zod enum (`z.enum([...])`), the flag name is completed as usual and the valid values are suggested after the flag: `--role ` followed by Tab shows `admin`, `user`, `guest`. Enum values are read from Zod's `_zod.values` internal property, which propagates through `.optional()`, `.default()`, etc.
-
-After typing `--flag ` (with trailing space), the completer switches to completing individual enum values instead of flag names. For example, `--role ` followed by pressing Tab shows `admin`, `user`, `guest`. Partial input is filtered: `--role a` → `admin`. This also works with short aliases (`-r a` → `admin`).
+When a definition's schema is a Zod enum (`z.enum([...])`), the flag name completes as usual and the values complete after it: `--role ` + Tab → `admin`, `user`, `guest`; partial input is filtered (`--role a` → `admin`). Enum values are read from Zod's `_zod.values` internal property, which propagates through `.optional()`, `.default()`, etc. Short aliases work the same way (`-r a` → `admin`).
 
 ## Error model
 
@@ -260,7 +258,7 @@ Errors propagate to `handleError`. Registered [`onError`](hooks/index.md#error-h
 
 ---
 
-[**Commands**](commands/index.md) — defining commands and arguments  
-[**Arguments**](arguments/index.md) — typed accessors and prompting  
-[**Hooks**](hooks/index.md) — lifecycle event reference  
-[**Pipe operator**](architecture.md#pipe-operator-) — chaining commands with `|`
+- [Commands](commands/index.md)
+- [Arguments](arguments/index.md)
+- [Hooks](hooks/index.md)
+- [Pipe operator](architecture.md#pipe-operator)

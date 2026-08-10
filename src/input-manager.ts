@@ -2,6 +2,12 @@ import * as readline from 'node:readline';
 import { readRawTerminal } from './hidden-input.js';
 import { InterruptedError } from './errors.js';
 
+/**
+ * readline's Interface exposes a `clearLine()` method at runtime (used to
+ * reset the line buffer) but it is missing from @types/node.
+ */
+type ClearLineInterface = readline.Interface & { clearLine(): void };
+
 export enum InputMode {
     Command = 'command',
     Drop = 'drop',
@@ -35,8 +41,7 @@ export class InputManager {
     private pendingReject: ((error: Error) => void) | null = null;
     private pendingOnClose: (() => void) | null = null;
     private previousMode: InputMode = InputMode.Command;
-    private savedRawMode = false;
-    private echo = true;
+    private savedPrompt: string | null = null;
 
     constructor(
         private stdin: NodeJS.ReadStream,
@@ -57,11 +62,6 @@ export class InputManager {
         });
 
         rl.on('SIGINT', () => {
-            readline.clearLine(this.stdout, -1);
-            readline.cursorTo(this.stdout, 0);
-            if (!this.silentSigint) {
-                this.stdout.write('^C\n');
-            }
             if (this.mode === InputMode.Accept && this.pendingResolve && this.pendingReject) {
                 const reject = this.pendingReject;
                 const restore = this.previousMode;
@@ -69,9 +69,18 @@ export class InputManager {
                 this.pendingReject = null;
                 this.stdin.removeListener('end', this.pendingOnClose!);
                 this.pendingOnClose = null;
+                (rl as ClearLineInterface).clearLine();
+                if (!this.silentSigint) {
+                    this.stdout.write('^C\n');
+                }
+                this.restoreAcceptPrompt();
                 this.restoreMode(restore);
                 reject(new InterruptedError());
                 return;
+            }
+            (rl as ClearLineInterface).clearLine();
+            if (!this.silentSigint) {
+                this.stdout.write('^C\n');
             }
             rl.prompt();
         });
@@ -99,6 +108,7 @@ export class InputManager {
         this.pendingResolve = null;
         this.pendingReject = null;
         this.pendingOnClose = null;
+        this.savedPrompt = null;
     }
 
     /**
@@ -129,7 +139,6 @@ export class InputManager {
         if (!this.rl) return;
 
         if (this.stdin.isTTY) {
-            this.savedRawMode = (this.stdin as unknown as { isRaw: boolean }).isRaw ?? false;
             (this.stdin as unknown as { setRawMode(mode: boolean): void }).setRawMode(true);
         }
     }
@@ -149,7 +158,6 @@ export class InputManager {
 
         return new Promise<string>((resolve, reject) => {
             this.mode = InputMode.Accept;
-            this.echo = echo;
             this.previousMode = previousMode;
             this.pendingReject = reject;
 
@@ -163,9 +171,19 @@ export class InputManager {
             }
             this.rl!.resume();
 
+            // Readline repaints `prompt + buffer` on every editing key
+            // (Backspace, arrows, ...) via an internal line refresh. If its
+            // prompt is left stale (`> `), that redraw clobbers the accept
+            // prompt written below. Swap readline's prompt to the accept
+            // prompt for the duration of the prompt and restore it on exit
+            // so redraws keep the accept prompt on screen.
+            this.savedPrompt = this.rl!.getPrompt();
+            this.rl!.setPrompt(prompt);
+
             this.stdout.write(prompt);
 
             const cleanup = () => {
+                this.restoreAcceptPrompt();
                 this.restoreMode(previousMode);
             };
 
@@ -259,7 +277,6 @@ export class InputManager {
      * Set echo on or off without changing mode.
      */
     setEcho(on: boolean): void {
-        this.echo = on;
         if (!this.rl || !this.stdin.isTTY) return;
         (this.stdin as unknown as { setRawMode(mode: boolean): void }).setRawMode(!on);
     }
@@ -284,6 +301,19 @@ export class InputManager {
             case InputMode.Drop:
                 break;
         }
+    }
+
+    /**
+     * Restore the readline prompt that was in effect before an accept
+     * prompt swapped it out (see {@link acceptInput}). Called from the
+     * accept cleanup path and the SIGINT handler. Tolerates `stop()` having
+     * run first (rl null + savedPrompt already reset).
+     */
+    private restoreAcceptPrompt(): void {
+        if (this.rl) {
+            this.rl.setPrompt(this.savedPrompt!);
+        }
+        this.savedPrompt = null;
     }
 
     private restoreMode(mode: InputMode): void {
