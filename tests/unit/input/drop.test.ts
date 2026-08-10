@@ -38,7 +38,7 @@ describe('InputManager', () => {
             expect(stdin.isRaw).toBe(true);
         });
 
-        it('defaults savedRawMode to false when isRaw is undefined', () => {
+        it('sets raw mode on TTY when isRaw is undefined', () => {
             const stdin: any = Object.assign(new PassThrough(), {
                 isTTY: true,
                 setRawMode: function (this: any, mode: boolean) {

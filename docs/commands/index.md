@@ -6,7 +6,7 @@ Commands are objects in a hierarchical tree. Every node extends [`Command`](clas
 
 ### `command(name, execute, options?)` {#command}
 
-Returns a `Command` ready for [`terminal.register()`](../terminal/index.md#register). The `options` argument accepts `description`, `arguments`, `aliases`, `acceptsPipelineInput`, and `providesPipelineOutput`.
+Returns a `Command` ready for [`terminal.register()`](#registration). The `options` argument accepts `description`, `arguments`, `aliases`, `acceptsPipelineInput`, and `providesPipelineOutput`.
 
 ```ts
 command('greet', (ctx) => ctx.stdout.write('Hello!\n'), { description: 'Say hello' });
@@ -25,32 +25,32 @@ Returns a `CommandContainer`. The `options` object accepts `description`, `child
 container('config', {
     description: 'Configuration',
     children: [
-        command('get', 'Get a value', handler),
-        command('set', 'Set a value', handler)
+        command('get', handler, { description: 'Get a value' }),
+        command('set', handler, { description: 'Set a value' })
     ]
 });
 container('server', { description: 'Server commands', aliases: ['srv'] });
 ```
 
-### `arg(name, description?, schema, position?, aliases?, secret?)` {#arg}
+### `arg(name, schema, options?)` {#arg}
 
 Shortcut for a single [`CommandArgumentDefinition`](definitions.md). See [Argument Definitions](definitions.md) for details, examples, and schema patterns.
 
-When `position` is provided, the argument can be given as a bare token instead of `--name value`. When `secret` is `true`, missing arguments prompt with hidden input.
+When the `position` option is provided, the argument can be given as a bare token instead of `--name value`. When the `secret` option is `true`, missing arguments prompt with hidden input.
 
 ## Registration
 
 Register at root with `terminal.register()`:
 
 ```ts
-term.register(command('greet', '...', handler));
+term.register(command('greet', handler, { description: '...' }));
 ```
 
 Subcommands are added to a parent container via `.add()`:
 
 ```ts
 const cfg = container('config', { description: 'Configuration' });
-cfg.add(command('get', 'Get a value', handler));
+cfg.add(command('get', handler, { description: 'Get a value' }));
 term.register(cfg);
 ```
 
@@ -78,6 +78,6 @@ Pipeline data is consumed through the [`CommandArguments`](../arguments/index.md
 
 ---
 
-[**Classes**](classes.md) — explicit Command / CommandContainer subclasses  
-[**Definitions**](definitions.md) — argument definitions, positional args, schemas  
-[**Arguments**](../arguments/index.md) — typed accessors and prompting
+- [Classes](classes.md)
+- [Definitions](definitions.md)
+- [Arguments](../arguments/index.md)

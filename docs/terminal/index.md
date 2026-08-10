@@ -2,10 +2,10 @@
 
 The `Terminal` class creates an interactive shell — it manages the readline loop, command dispatch, lifecycle hooks, and history persistence.
 
-[**History**](history.md) — command history persistence  
-[**Commands**](../commands/index.md) — defining commands  
-[**Arguments**](../arguments/index.md) — typed accessors and prompting  
-[**Hooks**](../hooks/index.md) — lifecycle event reference
+- [History](history.md)
+- [Commands](../commands/index.md)
+- [Arguments](../arguments/index.md)
+- [Hooks](../hooks/index.md)
 
 ## Options
 
@@ -32,4 +32,4 @@ Commands never execute concurrently. How mid-execution input is handled depends 
 
 - **Default** (`false`): input is queued by an internal mutex and processed in
   order after the current command finishes. Prompts never appear mid-output.
-- **When `true`** (TTY only): the input manager switches to **drop mode** during command execution — stdin enters raw mode and pauses, so keystrokes are neither echoed nor queued. When the command finishes, the previous input mode is restored. See [Architecture — Input management](../architecture.md#input-management) for details.
+- **When `true`** (TTY only): the input manager switches to **drop mode** during command execution, so keystrokes are neither echoed nor queued. When the command finishes, the previous input mode is restored. See [Architecture - Input management](../architecture.md#input-management) for details.

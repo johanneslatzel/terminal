@@ -16,12 +16,12 @@ nav:
   - Overview: index.md
   - Quick Start: quickstart.md
   - Architecture: architecture.md
-  - Built-ins: builtins.md
+  - Built-in Commands: builtins.md
   - Terminal: terminal/index.md
   - Commands:
     - Overview: commands/index.md
     - Classes: commands/classes.md
-    - Definitions: commands/definitions.md
+    - Argument Definitions: commands/definitions.md
   - Arguments: arguments/index.md
   - Hooks: hooks/index.md
 markdown_extensions:

@@ -27,7 +27,12 @@ export function makeNonTtyStreams(): { stdin: any; stdout: any; stdoutChunks: st
 export function makeMockRl(): any {
     const rl: any = new EventEmitter();
     rl.prompt = () => {};
-    rl.setPrompt = () => {};
+    rl.clearLine = () => {};
+    rl._prompt = '> ';
+    rl.setPrompt = (p: string) => {
+        rl._prompt = p;
+    };
+    rl.getPrompt = () => rl._prompt;
     rl.close = () => {};
     rl.pause = () => {};
     rl.resume = () => {};

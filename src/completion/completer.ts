@@ -25,6 +25,10 @@ export interface Completion {
     partial: string;
 }
 
+/**
+ * Collect the names and aliases of the given commands into a deduplicated
+ * list of completion candidates (insertion order).
+ */
 function collectAllNames(commands: Command[]): string[] {
     const names = new Set<string>();
     for (const c of commands) {
@@ -36,13 +40,58 @@ function collectAllNames(commands: Command[]): string[] {
     return [...names];
 }
 
+/**
+ * Whether a token looks like a short flag: `-x` (single dash, single char).
+ * A loose shape check used where the exact classification does not matter —
+ * skipping flag-like tokens while walking the command tree, resolving `-x`
+ * to a flag definition, or collecting used flags. Unlike
+ * {@link isShortFlagToken} it does not exclude digits, so `-1` is treated as
+ * short flag-shaped and skipped rather than mismatched as a command token.
+ */
 function isShortFlagPrefix(s: string): boolean {
     return s.startsWith('-') && !s.startsWith('--') && s.length === 2;
 }
 
 /**
+ * Whether the args-parser classifies a token as a short flag: `-x` (single
+ * dash, single non-digit char). Mirrors the parser's rule exactly — digits
+ * are excluded because negative-number lookalikes like `-1` are parsed as
+ * positional values, not flags. Used to count bare tokens in
+ * {@link countBareArgTokens}. Delegates to {@link isShortFlagPrefix} and
+ * adds the digit guard.
+ */
+function isShortFlagToken(s: string): boolean {
+    return isShortFlagPrefix(s) && !/[0-9]/.test(s[1]!);
+}
+
+/**
+ * Count the bare (positional) tokens among the argument tokens that follow
+ * the command name, mirroring the args-parser: `--name`/`-x` flag tokens and
+ * their immediately following value tokens are skipped.
+ *
+ * @returns The number of positional tokens consumed so far.
+ */
+function countBareArgTokens(tokens: string[]): number {
+    let count = 0;
+    for (let i = 0; i < tokens.length; i++) {
+        const token = tokens[i]!;
+        if (token.startsWith('--') || isShortFlagToken(token)) {
+            const next = tokens[i + 1];
+            if (next !== undefined && !next.startsWith('--') && !isShortFlagToken(next)) {
+                i++;
+            }
+            continue;
+        }
+        count++;
+    }
+    return count;
+}
+
+/**
  * Build a set of canonical argument names that have already been provided
  * on the command line, by scanning prefix tokens for --name and -x patterns.
+ *
+ * @returns The canonical names of flags already present in the prefix.
  */
 function collectUsedFlags(prefix: string[], definitions: CommandArgumentDefinition[]): Set<string> {
     const used = new Set<string>();
@@ -134,8 +183,16 @@ export class Completer {
         return this.completeSegment(prefix, partial, line);
     }
 
+    /**
+     * Complete a single pipeline segment. Walks the prefix tokens through the
+     * command tree to find the deepest matched command, then completes the
+     * current position: a flag's enum value, a positional slot's enum value,
+     * a `--flag`/alias name, or a nested command name. A prefix token that
+     * matches no command bails with an empty completion.
+     */
     private completeSegment(prefix: string[], partial: string, line: string): Completion {
         let lastMatched: Command | null = null;
+        let commandTokenCount = 0;
         let commands = this.tree.getRoots();
         for (const token of prefix) {
             if (token.startsWith('--')) continue;
@@ -143,6 +200,7 @@ export class Completer {
             const cmd = commands.find((command) => command.matches(token));
             if (!cmd) return { matches: [], partial: line };
             lastMatched = cmd;
+            commandTokenCount++;
             if (!(cmd instanceof CommandContainer)) break;
             commands = cmd.commands();
         }
@@ -173,6 +231,22 @@ export class Completer {
                     : partial === ''
                       ? '--'
                       : null;
+
+            if (!partial.startsWith('-')) {
+                const positionalDefs = defs
+                    .filter((d) => d.position !== undefined)
+                    .sort((a, b) => a.position! - b.position!);
+                const bareCount = countBareArgTokens(prefix.slice(commandTokenCount));
+                const positionalDef = positionalDefs[bareCount];
+                if (positionalDef) {
+                    const enumVals = extractEnumValues(positionalDef.schema);
+                    if (enumVals && enumVals.length > 0) {
+                        const matches = enumVals.filter((v) => v.startsWith(partial));
+                        return { matches, partial };
+                    }
+                }
+            }
+
             if (flagPartial !== null) {
                 const defs = lastMatched.definitions();
                 const usedFlags = collectUsedFlags(prefix, defs);

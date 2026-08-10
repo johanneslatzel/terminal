@@ -177,6 +177,61 @@ describe('InputManager', () => {
             await expect(promise).rejects.toBeInstanceOf(InterruptedError);
             expect(stdoutChunks.join('')).not.toContain('^C');
         });
+
+        it('swaps readline prompt to the accept prompt while prompting', async () => {
+            const { im, rl } = makeManager();
+            im.start(rl);
+            im.acceptInput('Enter value: ');
+            expect(rl.getPrompt()).toBe('Enter value: ');
+        });
+
+        it('restores the previous readline prompt after resolve', async () => {
+            const { im, rl } = makeManager();
+            im.start(rl);
+            const promise = im.acceptInput('Enter value: ');
+            rl.emit('line', 'ok');
+            await promise;
+            expect(rl.getPrompt()).toBe('> ');
+        });
+
+        it('restores the previous readline prompt on SIGINT', async () => {
+            const { im, rl } = makeManager();
+            im.start(rl);
+            const promise = im.acceptInput('Enter value: ');
+            rl.emit('SIGINT');
+            await expect(promise).rejects.toBeInstanceOf(InterruptedError);
+            expect(rl.getPrompt()).toBe('> ');
+        });
+
+        it('restores the previous readline prompt when stdin closes', async () => {
+            const { im, rl, stdin } = makeManager();
+            im.start(rl);
+            const promise = im.acceptInput('Enter value: ');
+            stdin.emit('end');
+            await expect(promise).rejects.toThrow('stdin closed');
+            expect(rl.getPrompt()).toBe('> ');
+        });
+
+        it('restores a custom prompt set before acceptInput', async () => {
+            const { im, rl } = makeManager();
+            rl.setPrompt('λ ');
+            im.start(rl);
+            const promise = im.acceptInput('Enter value: ');
+            rl.emit('line', 'ok');
+            await promise;
+            expect(rl.getPrompt()).toBe('λ ');
+        });
+
+        it('clears the readline line buffer on SIGINT during accept', async () => {
+            let cleared = false;
+            const { im, rl } = makeManager();
+            rl.clearLine = () => { cleared = true; };
+            im.start(rl);
+            const promise = im.acceptInput('p: ');
+            rl.emit('SIGINT');
+            await expect(promise).rejects.toBeInstanceOf(InterruptedError);
+            expect(cleared).toBe(true);
+        });
     });
 
     // -----------------------------------------------------------------------

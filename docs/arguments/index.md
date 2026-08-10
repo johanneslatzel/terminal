@@ -104,6 +104,6 @@ If the argument definition has `secret: true`, the prompt uses hidden input — 
 
 ---
 
-[**Definitions**](../commands/definitions.md) — `CommandArgumentDefinition` interface, positional args  
-[**Commands**](../commands/index.md) — factory functions and registration  
-[**Hooks**](../hooks/index.md) — lifecycle events
+- [Definitions](../commands/definitions.md)
+- [Commands](../commands/index.md)
+- [Hooks](../hooks/index.md)

@@ -49,6 +49,6 @@ class ConfigCommand extends CommandContainer {
 
 ---
 
-[**Commands**](index.md) — factory functions and registration  
-[**Definitions**](definitions.md) — argument definition interface  
-[**Arguments**](../arguments/index.md) — typed accessors
+- [Commands](index.md)
+- [Definitions](definitions.md)
+- [Arguments](../arguments/index.md)
