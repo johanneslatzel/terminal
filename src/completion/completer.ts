@@ -138,9 +138,19 @@ export class Completer {
 
     /**
      * Compute completions for a partial input line.
+     *
+     * Never throws: when the line cannot be tokenized (e.g. an unclosed
+     * quote) it returns a no-op completion instead of propagating the parse
+     * error. This keeps readline's tab handler from being left in a paused,
+     * unusable state when a quote is still open.
      */
     complete(line: string): Completion {
-        const tokens = tokenize(line);
+        let tokens: string[];
+        try {
+            tokens = tokenize(line);
+        } catch {
+            return { matches: [], partial: line };
+        }
         const trailingSpace = line.endsWith(' ');
 
         if (tokens.length === 0 && !trailingSpace) {

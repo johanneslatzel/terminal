@@ -23,11 +23,11 @@ const size = await args.require<string>('size'); // z.enum(['small', 'medium', '
 When the argument's Zod schema is an **array type** (`z.array(...)`), the raw value is auto-split on commas before validation:
 
 ```ts
-// z.array(z.string()) — input: "--fields id, name, email"
+// z.array(z.string()): input "--fields id, name, email"
 const fields = await args.require<string[]>('fields');
 // → ['id', 'name', 'email']
 
-// z.array(z.coerce.number()) — input: "--nums 1, 2, 3"
+// z.array(z.coerce.number()): input "--nums 1, 2, 3"
 const nums = await args.require<number[]>('nums');
 // → [1, 2, 3]
 ```
@@ -36,7 +36,7 @@ Whitespace around commas is trimmed. Empty strings between commas are dropped.
 
 Missing required arguments prompt interactively (when a readline is available). Without a readline, throws `InvalidArgumentsError`.
 
-Pressing **Ctrl+C** during an interactive prompt cancels the command. The `require()` call throws an `InterruptedError`, which is silently handled by the terminal — no error message is printed, just `^C`.
+Pressing **Ctrl+C** during an interactive prompt cancels the command. The `require()` call throws an `InterruptedError`, which is silently handled by the terminal; no error message is printed, just `^C`.
 
 ## `requireSecret(name)` {#requiresecret}
 
@@ -50,13 +50,13 @@ Keystrokes echo as `*`. **Ctrl+W** / **Ctrl+Backspace** deletes the previous wor
 
 ## `flag(name)` {#flag}
 
-CLI flag semantics — absent → `false`, `--flag` → `true`, `--flag false` → `false`:
+CLI flag semantics: absent → `false`, `--flag` → `true`, `--flag false` → `false`:
 
 ```ts
 const verbose = await args.flag('verbose');
 ```
 
-Define with `z.boolean()`. **Don't use `z.coerce.boolean()`** — Zod 4's `Boolean()` turns `"false"` into `true`. The string-to-boolean coercion is handled internally.
+Define with `z.boolean()`. **Don't use `z.coerce.boolean()`**: Zod 4's `Boolean()` turns `"false"` into `true`. The string-to-boolean coercion is handled internally.
 
 ## `requirePipelineArray()` {#requirepipelinearray}
 
@@ -69,7 +69,7 @@ for (const item of items) {
 }
 ```
 
-An Array-accepting command run standalone (without a pipeline) receives `[]` from the terminal. `InvalidArgumentsError` is only thrown when no pipeline array input is available — i.e. outside Array mode (`None` or `Single`), such as when constructing `CommandArguments` directly.
+An Array-accepting command run standalone (without a pipeline) receives `[]` from the terminal. `InvalidArgumentsError` is only thrown when no pipeline array input is available; that is, outside Array mode (`None` or `Single`), such as when constructing `CommandArguments` directly.
 
 ## Single mode auto-mapping
 
@@ -91,16 +91,16 @@ When a required argument is missing and a readline is available, `require<T>(nam
 argument [name]: Alice
 ```
 
-If the argument definition has `secret: true`, the prompt uses hidden input — keystrokes echo as `*` instead of the typed character. This also applies when using [`require`](#require) on an argument defined with `secret: true`. Use [`requireSecret`](#requiresecret) to force hidden prompting regardless of the definition.
+If the argument definition has `secret: true`, the prompt uses hidden input; keystrokes echo as `*` instead of the typed character. This also applies when using [`require`](#require) on an argument defined with `secret: true`. Use [`requireSecret`](#requiresecret) to force hidden prompting regardless of the definition.
 
-`flag()` never prompts — missing flags default to `false`.
+`flag()` never prompts; missing flags default to `false`.
 
 ## Errors
 
 | Error                | Description                                                                |
 | -------------------- | -------------------------------------------------------------------------- |
 | `InvalidArgumentsError` | Missing required arg (no readline), unknown arg, duplicate flag, schema validation failure, calling `requirePipelineArray()` outside Array mode |
-| `InterruptedError`   | User pressed Ctrl+C during an interactive prompt — command is cancelled    |
+| `InterruptedError`   | User pressed Ctrl+C during an interactive prompt; command is cancelled    |
 
 ---
 

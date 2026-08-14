@@ -291,5 +291,42 @@ describe('Terminal', () => {
         expect(chunks.join('')).toContain('Error: raw string');
     });
 
+    it('keeps the terminal usable after tab with an unclosed quote', async () => {
+        const ttyStdin = Object.assign(new PassThrough(), {
+            isTTY: true,
+            setRawMode: () => {},
+            isRaw: false
+        }) as unknown as NodeJS.ReadStream;
+        const ttyStdout = new PassThrough() as unknown as NodeJS.WriteStream;
+        const chunks: string[] = [];
+        ttyStdout.on('data', (chunk: Buffer) => chunks.push(chunk.toString()));
+        const ttyTerm = new Terminal({
+            stdin: ttyStdin,
+            stdout: ttyStdout,
+            prompt: ''
+        });
+        await ttyTerm.start();
+
+        ttyStdin.write('workspace add "/home/johannes/Pro\t');
+        await new Promise((r) => setTimeout(r, 50));
+
+        const rl = (ttyTerm as unknown as { rl: { line: string; paused: boolean } }).rl;
+        expect(rl.paused).toBe(false);
+        expect(rl.line).toBe('workspace add "/home/johannes/Pro');
+
+        // Enter still submits the unclosed line through the normal error
+        // path instead of wedging the terminal.
+        ttyStdin.write('\n');
+        await waitForOutput(chunks, (s) => s.includes('Error: Unclosed " quote'));
+
+        // A clean command afterwards still executes.
+        ttyStdin.write('help\n');
+        await waitForOutput(chunks, (s) => s.includes('Commands:'));
+
+        expect(chunks.join('')).not.toContain('Readline error');
+
+        await ttyTerm.stop();
+    });
+
     // ------------------------------------------------------------------
 });

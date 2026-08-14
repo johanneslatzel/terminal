@@ -57,7 +57,7 @@ Given `["config", "set", "--theme", "dark"]`:
 
 - Unknown command → [`CommandNotFoundError`](commands/index.md) with prefix-matched suggestions
 - Commands with subcommands call `execute()` only when no subcommand matches
-- Remaining tokens are parsed via [`parseFlags()`](https://github.com/johanneslatzel/terminal/blob/main/src/input/parser.ts)
+- Remaining tokens are parsed via [`parseFlags()`](https://github.com/johanneslatzel/terminal/blob/main/src/input/args-parser.ts)
 
 ## Tokenizer
 
@@ -73,7 +73,7 @@ Given `["config", "set", "--theme", "dark"]`:
 
 ## Argument parsing
 
-[`parseFlags()`](https://github.com/johanneslatzel/terminal/blob/main/src/input/parser.ts) converts unmatched tokens to `Record<string, string>`:
+[`parseFlags()`](https://github.com/johanneslatzel/terminal/blob/main/src/input/args-parser.ts) converts unmatched tokens to `Record<string, string>`:
 
 ```
 --theme dark   → { theme: "dark" }
@@ -93,7 +93,7 @@ Wrapped in [`CommandArguments`](arguments/index.md) with typed accessors.
 
 When the `|` character appears between command tokens, the input line is treated as a pipeline. Segments are split at `|`, resolved independently, and executed left-to-right. Each segment's structured output becomes the next segment's input.
 
-`|` only counts as a separator when it is its own token — i.e. separated from surrounding text by whitespace. A `|` glued to other characters is literal text inside that token:
+`|` only counts as a separator when it is its own token, i.e. separated from surrounding text by whitespace. A `|` glued to other characters is literal text inside that token:
 
 - `a | b`: pipeline, `a` then `b`
 - `a|b`: single token `a|b` (literal `|`)
@@ -156,7 +156,7 @@ In a pipeline, `ctx.output` is set on the execution context for commands on the 
 
 A command can check `ctx.output !== undefined` to determine if it can produce pipeline output.
 
-Pipeline data is consumed through [`CommandArguments`](arguments/index.md) — there is no `ctx.input`. Use `args.requirePipelineArray()` (Array mode) or auto-mapped `args.require()` (Single mode).
+Pipeline data is consumed through [`CommandArguments`](arguments/index.md); there is no `ctx.input`. Use `args.requirePipelineArray()` (Array mode) or auto-mapped `args.require()` (Single mode).
 
 ### PipelineInputAcceptance
 
@@ -244,15 +244,17 @@ Three (or more) segment pipelines work as expected. Each intermediate command mu
 
 The [`Completer`](https://github.com/johanneslatzel/terminal/blob/main/src/completion/completer.ts) walks the command tree for matching names. At leaf commands, completes `--flag` names and `-x` short aliases from `definitions()`.
 
-Already-used flags are excluded from completions — if `--username` has been provided, it won't appear again in suggestions.
+Already-used flags are excluded from completions; if `--username` has been provided, it won't appear again in suggestions.
 
 When a definition's schema is a Zod enum (`z.enum([...])`), the flag name completes as usual and the values complete after it: `--role ` + Tab → `admin`, `user`, `guest`; partial input is filtered (`--role a` → `admin`). Enum values are read from Zod's `_zod.values` internal property, which propagates through `.optional()`, `.default()`, etc. Short aliases work the same way (`-r a` → `admin`).
 
+A positional (bare-token) argument with an enum schema completes its values directly: `create a` + Tab → `admin`, and partial input is filtered the same way (`create ad` → `admin`).
+
 ## Error model
 
-Errors propagate to `handleError`. Registered [`onError`](hooks/index.md#error-handling) hooks run first — any returning `true` suppresses the error. Hook throw errors are caught individually; remaining hooks still run. Unconsumed errors print `Error: <message>` to stdout. The terminal loop never crashes.
+Errors propagate to `handleError`. Registered [`onError`](hooks/index.md#error-handling) hooks run first; any returning `true` suppresses the error. Hook throw errors are caught individually; remaining hooks still run. Unconsumed errors print `Error: <message>` to stdout. The terminal loop never crashes.
 
-[`InterruptedError`](https://github.com/johanneslatzel/terminal/blob/main/src/errors.ts) is thrown when the user presses Ctrl+C during an interactive prompt. It is silently handled — no error output, no `onError` hooks fire.
+[`InterruptedError`](https://github.com/johanneslatzel/terminal/blob/main/src/errors.ts) is thrown when the user presses Ctrl+C during an interactive prompt. It is silently handled; no error output, no `onError` hooks fire.
 
 [`ParseError`](https://github.com/johanneslatzel/terminal/blob/main/src/input/parser.ts) is thrown during tokenization for malformed input (unclosed quotes, adjacent chars).
 

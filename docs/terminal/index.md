@@ -1,6 +1,6 @@
 # Terminal
 
-The `Terminal` class creates an interactive shell — it manages the readline loop, command dispatch, lifecycle hooks, and history persistence.
+The `Terminal` class creates an interactive shell; it manages the readline loop, command dispatch, lifecycle hooks, and history persistence.
 
 - [History](history.md)
 - [Commands](../commands/index.md)
@@ -15,7 +15,7 @@ The `Terminal` class creates an interactive shell — it manages the readline lo
 | `stdin`       | `process.stdin`  | Input stream                                                   |
 | `stdout`      | `process.stdout` | Output stream                                                  |
 | `historySize` | `100`            | Readline history size                                          |
-| `historyPath` | —                | Path for [persisting command history](history.md) (JSON array) |
+| `historyPath` | `none` | Path for [persisting command history](history.md) (JSON array) |
 | `dropInflightKeystrokes` | `false` | When `true`, suppresses echo and discards input that arrives while a command is executing (TTY only). When `false` (default), input is queued and processed after the command finishes. |
 | `silentSigint` | `false` | When `true`, suppresses the `^C` echo normally written to stdout on Ctrl+C. The current input line is still cleared and the prompt is re-displayed. |
 

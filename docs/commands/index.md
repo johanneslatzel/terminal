@@ -72,7 +72,7 @@ Every command's `execute(ctx, args)` receives a `CommandContext`:
 | `state`            | Shared mutable state between commands                                |
 | `logger`           | Console-compatible logger                                            |
 | `exit`             | Shorthand for `terminal.stop()`                                      |
-| `output`           | Pipeline output for the next `\|` segment — call `.submit()` to emit |
+| `output`           | Pipeline output for the next `\|` segment; call `.submit()` to emit |
 
 Pipeline data is consumed through the [`CommandArguments`](../arguments/index.md) parameter `args`, not `ctx`. Use `args.requirePipelineArray()` (Array mode) or auto-mapped `args.require()` (Single mode).
 

@@ -35,11 +35,19 @@ This works with enums wrapped in `.optional()`, `.default()`, `.pipe()`, etc.
 
 Short aliases work the same way (`-r a` → `admin`).
 
+A positional (bare-token) argument with an enum schema completes its values directly, without a flag prefix:
+
+```
+> create a   # Tab → admin
+> create ad  # Tab → admin
+```
+
 ```ts
 arg('role', z.enum(['admin', 'user', 'guest']), { description: 'User role' });
 // --role    → admin | user | guest
 // --role a  → admin
 // --        → --role
+// a         → admin (positional enum completion)
 ```
 
 ## `arg()` factory {#arg}

@@ -332,4 +332,33 @@ describe('Completer', () => {
         expect(matches).toEqual([]);
     });
 
+    it('does not throw on an unclosed double quote', () => {
+        const tree = new CommandTree();
+        tree.add(new HelpCommand());
+
+        const completer = new Completer(tree);
+        const { matches, partial } = completer.complete('help "/some/path/Pro');
+        expect(matches).toEqual([]);
+        expect(partial).toBe('help "/some/path/Pro');
+    });
+
+    it('does not throw on an unclosed single quote', () => {
+        const tree = new CommandTree();
+        tree.add(new HelpCommand());
+
+        const completer = new Completer(tree);
+        const { matches, partial } = completer.complete("help '/some/path/Pro");
+        expect(matches).toEqual([]);
+        expect(partial).toBe("help '/some/path/Pro");
+    });
+
+    it('does not throw on a quote adjacent to non-whitespace', () => {
+        const tree = new CommandTree();
+        tree.add(new HelpCommand());
+
+        const completer = new Completer(tree);
+        const { matches } = completer.complete('help foo"bar');
+        expect(matches).toEqual([]);
+    });
+
 });
