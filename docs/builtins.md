@@ -212,6 +212,30 @@ Without grouping, a single object is emitted: `{ "mean": 5.33 }`. `-g` / `--grou
 ]
 ```
 
+## `shortcut` - Manage persistent command shortcuts
+
+[`ShortcutCommand`](https://github.com/johanneslatzel/terminal/blob/main/src/commands/shortcut.ts). Binds names to full command strings; typing the name alone runs the stored command. Shortcuts persist to `shortcutPath` (default `./shortcuts.json`) and load automatically on [`start()`](terminal/index.md). See [Shortcuts](terminal/shortcuts.md) for details.
+
+| Subcommand | Description |
+|---|---|
+| `shortcut add <name> <command>` | Create or update a shortcut; quote commands containing flags (`shortcut add ll 'ls -la /tmp'`) |
+| `shortcut save <name>` | Save the most recently executed command as a shortcut |
+| `shortcut remove <name>` | Delete a shortcut from store and tree |
+| `shortcut list` | Print all shortcuts as `name → command` lines |
+| `shortcut show <name>` | Print the stored command string |
+
+```
+> shortcut add gs git status
+Saved shortcut "gs".
+> shortcut list
+gs → git status
+> gs
+On branch main
+nothing to commit, working tree clean
+```
+
+Names must not contain whitespace or shadow registered commands; re-adding an existing shortcut name updates it.
+
 ## Shadowing
 
 Builtins cannot be removed or shadowed. Registering a command whose name or alias collides with an existing command throws `InvalidArgumentsError`:

@@ -12,6 +12,17 @@ export class CommandTree extends CommandContainer {
     }
 
     /**
+     * Remove a root-level command by name.
+     * Delegates to {@link CommandContainer.remove}.
+     *
+     * @param name - Name of the command to remove.
+     * @returns `true` when a command with that name was found and removed.
+     */
+    remove(name: string): boolean {
+        return super.remove(name);
+    }
+
+    /**
      * Default execution: prints a global help listing of all
      * registered root commands.
      */

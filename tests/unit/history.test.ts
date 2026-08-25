@@ -251,7 +251,7 @@ describe('history persistence', () => {
         expect(saved).toContain('help');
     });
 
-    it('saveHistory is a no-op when terminal not started', async () => {
+    it('saveHistory writes [] when history is empty', async () => {
         const filePath = join(tmpDir, 'history.json');
         const term = new Terminal({
             stdin: new PassThrough() as unknown as NodeJS.ReadStream,
@@ -259,9 +259,27 @@ describe('history persistence', () => {
             prompt: '',
             historyPath: filePath
         });
-        // Should not throw
+
         await term.saveHistory();
-        expect(existsSync(filePath)).toBe(false);
+
+        expect(existsSync(filePath)).toBe(true);
+        expect(JSON.parse(readFileSync(filePath, 'utf-8'))).toEqual([]);
+    });
+
+    it('saveHistory heals a corrupt history file on the next save', async () => {
+        const filePath = join(tmpDir, 'history.json');
+        writeFileSync(filePath, 'not json', 'utf-8');
+        const term = new Terminal({
+            stdin: new PassThrough() as unknown as NodeJS.ReadStream,
+            stdout: new PassThrough() as unknown as NodeJS.WriteStream,
+            prompt: '',
+            historyPath: filePath
+        });
+
+        await term.loadHistory(); // parse fails → empty store
+        await term.saveHistory(); // overwrites the corrupt file
+
+        expect(readFileSync(filePath, 'utf-8')).toBe('[]\n');
     });
 
     it('loadHistory stores internally for createReadline', async () => {

@@ -1,4 +1,5 @@
 import * as readline from 'node:readline';
+import { join } from 'node:path';
 import { Mutex } from 'async-mutex';
 import {
     Command,
@@ -13,6 +14,8 @@ import { CommandArguments } from './command-arguments.js';
 import { Completer } from './completion/completer.js';
 import { CommandNotFoundError, InterruptedError } from './errors.js';
 import { HistoryStore } from './history.js';
+import { ShortcutStore } from './shortcut-store.js';
+import { ShortcutCommand, ShortcutEntryCommand } from './commands/shortcut.js';
 import { HelpCommand } from './commands/help.js';
 import { ExitCommand } from './commands/exit.js';
 import { ClearCommand } from './commands/clear.js';
@@ -69,6 +72,13 @@ export class Terminal {
     private inputManager: InputManager;
     private inputFilter: FilteredInputStream | null = null;
     private historyStore: HistoryStore;
+    /**
+     * Registry of persistent shortcuts, loaded from `shortcutPath`.
+     * Public so builtin shortcut commands can manage it. @internal
+     */
+    readonly shortcutStore = new ShortcutStore();
+    /** Resolved persistence path for shortcuts (defaults to ./shortcuts.json). */
+    private readonly shortcutPath: string;
     private pipeline: PipelineExecutor;
     private static readonly DEFAULT_OPTIONS = {
         prompt: '> ',
@@ -96,6 +106,7 @@ export class Terminal {
      */
     constructor(options?: TerminalOptions) {
         this.options = { ...Terminal.DEFAULT_OPTIONS, ...options };
+        this.shortcutPath = options?.shortcutPath ?? join(process.cwd(), 'shortcuts.json');
         this.tree = new CommandTree();
         this.inputManager = new InputManager(
             this.options.stdin,
@@ -141,6 +152,7 @@ export class Terminal {
         this.register(new ClipCommand());
         this.register(new FilterCommand());
         this.register(new AggregateCommand());
+        this.register(new ShortcutCommand(this));
     }
 
     /**
@@ -193,6 +205,63 @@ export class Terminal {
     }
 
     /**
+     * Register a shortcut in the command tree so it participates in
+     * tab completion and help output, then persist the shortcut store.
+     * Idempotent — re-registering an existing name replaces its entry. @internal
+     *
+     * @param name          - Shortcut name (used as the command name).
+     * @param commandString - Stored command string (shown as description).
+     */
+    async registerShortcutCommand(name: string, commandString: string): Promise<void> {
+        this.tree.remove(name);
+        this.tree.add(new ShortcutEntryCommand(name, commandString));
+        await this.shortcutStore.save(this.shortcutPath);
+    }
+
+    /**
+     * Remove a shortcut from the command tree and persist the shortcut
+     * store. @internal
+     *
+     * @param name - Shortcut name to remove.
+     * @returns `true` when a tree entry with that name was removed.
+     */
+    async unregisterShortcutCommand(name: string): Promise<boolean> {
+        const removed = this.tree.remove(name);
+        await this.shortcutStore.save(this.shortcutPath);
+        return removed;
+    }
+
+    /**
+     * Load persisted shortcuts from {@link shortcutPath} and register each
+     * one in the command tree so it participates in tab completion and help
+     * output. Entries whose name would shadow an existing (non-shortcut)
+     * command are warned about and skipped for the session; they stay in
+     * the file on disk so they resurface once the conflict is resolved.
+     *
+     * Called by {@link start} before readline is created.
+     */
+    private async loadShortcuts(): Promise<void> {
+        await this.shortcutStore.load(this.shortcutPath);
+        for (const [name, commandString] of this.shortcutStore.all()) {
+            const conflict = this.tree
+                .getRoots()
+                .find((c) => c.matches(name) && !(c instanceof ShortcutEntryCommand));
+            if (conflict !== undefined) {
+                this.options.stdout.write(
+                    `Warning: shortcut "${name}" shadows command "${conflict.name()}" — skipped.\n`
+                );
+                this.shortcutStore.remove(name);
+                continue;
+            }
+            // Idempotent across repeated start() calls: an existing entry
+            // from a previous session on this instance is replaced, not
+            // treated as a conflict.
+            this.tree.remove(name);
+            this.tree.add(new ShortcutEntryCommand(name, commandString));
+        }
+    }
+
+    /**
      * Set the prompt string. Takes effect immediately on the running
      * terminal and persists across {@link start}/{@link stop} cycles.
      */
@@ -238,20 +307,32 @@ export class Terminal {
     }
 
     /**
-     * Write the current readline history (`rl.history`) to the history file
-     * as a JSON array, trimmed to `historySize`. No-op if the terminal
-     * hasn't been started yet (no `rl`).
+     * Write the current history to the history file as a JSON array,
+     * trimmed to `historySize`. An emptied history is persisted as `[]`.
      */
     async saveHistory(): Promise<void> {
         return this.historyStore.save(this.options.historyPath);
     }
 
     /**
+     * Snapshot of the current history entries (oldest-first).
+     * Returns a copy of the internal store — safe to mutate.
+     */
+    get historyEntries(): string[] {
+        return this.historyStore.entries;
+    }
+
+    /**
      * Start the terminal loop. Idempotent — safe to call multiple times.
+     *
+     * Loads persisted shortcuts before the readline interface is created so
+     * they are available to tab completion from the first prompt.
      */
     async start(): Promise<void> {
         if (this.running) return;
         this.running = true;
+
+        await this.loadShortcuts();
 
         this.rl = this.createReadline();
         this.inputManager.start(this.rl);
@@ -347,6 +428,10 @@ export class Terminal {
      * `dropInflightKeystrokes` is enabled, the InputManager switches to drop
      * mode at the start of execution so that any keystrokes arriving while the
      * command runs are silently discarded.
+     *
+     * Shortcut expansion runs first, inside the mutex: input that exactly
+     * matches a stored shortcut name is replaced by its command string before
+     * hooks and tokenization see it.
      */
     private async handleLine(input: string): Promise<void> {
         await this.mutex.runExclusive(async () => {
@@ -355,7 +440,8 @@ export class Terminal {
             }
 
             try {
-                const tokens = await this.processInput(input);
+                const expanded = this.expandInput(input);
+                const tokens = await this.processInput(expanded);
                 if (tokens.length === 0) {
                     this.inputManager.prompt();
                     return;
@@ -389,6 +475,15 @@ export class Terminal {
                 }
             }
         });
+    }
+
+    /**
+     * Replace input that exactly matches a stored shortcut name with its
+     * command string. Runs before parse hooks so the whole pipeline
+     * (hooks, tokenizer, history) observes the expanded text.
+     */
+    private expandInput(input: string): string {
+        return this.shortcutStore.get(input.trim()) ?? input;
     }
 
     private async processInput(input: string): Promise<string[]> {

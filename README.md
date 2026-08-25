@@ -18,7 +18,7 @@ Tree-structured TypeScript terminal/shell engine with automatic help, tab comple
 - command hints and tab completion of command names, `--flag`s, and enum values
 - typed arguments using zod schemas with interactive prompting for missing values
 - pipelines
-- builtin commands: help, exit, clear, select, json, table, sort, clip, filter, aggregate
+- builtin commands: help, exit, clear, select, json, table, sort, clip, filter, aggregate, shortcut
 - lifecycle hooks
 - optional JSON history persistence across sessions
 

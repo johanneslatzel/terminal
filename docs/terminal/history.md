@@ -22,3 +22,4 @@ term.hook()
 - `saveHistory()` creates parent directories automatically.
 - History is deduplicated (most recent occurrence wins) and trimmed to `historySize`.
 - File format is a JSON array of strings, oldest first.
+- An emptied history is persisted as `[]`: saving always reflects the current state, so cleared history overrides stale file contents.

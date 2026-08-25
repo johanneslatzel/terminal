@@ -175,6 +175,21 @@ export class CommandContainer extends Command {
         return this._commands;
     }
 
+    /**
+     * Remove a child command by name.
+     *
+     * Matches command names only — aliases are not considered.
+     *
+     * @param name - Name of the child command to remove.
+     * @returns `true` when a command with that name was found and removed.
+     */
+    remove(name: string): boolean {
+        const index = this._commands.findIndex((c) => c.name() === name);
+        if (index === -1) return false;
+        this._commands.splice(index, 1);
+        return true;
+    }
+
     async execute(ctx: CommandContext, _args: CommandArguments): Promise<void> {
         const { commandHelp } = await import('./commands/help.js');
         ctx.stdout.write(commandHelp(this) + '\n');
@@ -239,6 +254,12 @@ export interface TerminalOptions {
      * `saveHistory()` writes to it.
      */
     historyPath?: string;
+    /**
+     * Path to the JSON file used to persist command shortcuts (managed via
+     * the builtin `shortcut` command). Defaults to `shortcuts.json` in the
+     * current working directory. See docs/terminal/shortcuts.md.
+     */
+    shortcutPath?: string;
     /**
      * When `true` (TTY only), suppresses echo and discards input that arrives
      * while a command is executing.  Useful for interactive sessions where

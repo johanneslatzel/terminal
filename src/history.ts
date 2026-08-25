@@ -64,13 +64,13 @@ export class HistoryStore {
 
     /**
      * Write the current history to the file as a JSON array, trimmed to
-     * `size`. No-op if empty.
+     * `size`. An emptied history is persisted as `[]` — the write is never
+     * skipped, so deliberately cleared history overrides stale file content.
      *
      * @param path - Location of the history file. `undefined` is a no-op.
      */
     async save(path?: string): Promise<void> {
         if (!path) return;
-        if (this.items.length === 0) return;
         const trimmed = this.items.slice(-this.size);
         try {
             await mkdir(dirname(path), { recursive: true });
