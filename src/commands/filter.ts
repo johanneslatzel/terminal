@@ -233,6 +233,32 @@ function matches(item: Record<string, unknown>, cond: ParsedCondition, icase: bo
 }
 
 /**
+ * Positional slice helper: keeps the first `head` and/or last `tail` items of
+ * an array, mirroring the former `limit` command semantics. When both are given
+ * the result is the first `head` items followed by the last `tail` items; if
+ * `head + tail >=` the array length the whole array passes through unchanged.
+ * An undefined end means no slicing from that end.
+ *
+ * @param items - The array to slice.
+ * @param head - Number of leading items to keep, or undefined for no head slice.
+ * @param tail - Number of trailing items to keep, or undefined for no tail slice.
+ * @returns The sliced array.
+ */
+function applyHeadTail<T>(items: T[], head: number | undefined, tail: number | undefined): T[] {
+    const n = items.length;
+    if (head === undefined) {
+        return tail === undefined ? items : items.slice(n - tail);
+    }
+    if (tail === undefined) {
+        return items.slice(0, head);
+    }
+    if (head + tail >= n) {
+        return items;
+    }
+    return [...items.slice(0, head), ...items.slice(n - tail)];
+}
+
+/**
  * Built-in `filter` command. Keeps only pipeline objects that match
  * comma-separated conditions, e.g. `role=admin,age>=18`.
  *
@@ -256,6 +282,12 @@ function matches(item: Record<string, unknown>, cond: ParsedCondition, icase: bo
  * given; `--not` inverts the whole predicate and `--icase` enables
  * case-insensitive string comparison.
  *
+ * `--head/-h N` keeps the first N matching items and `--tail/-t N` keeps the
+ * last N; when both are given the result is the head slice followed by the tail
+ * slice (the whole input passes through when the slices overlap or sum to the
+ * count). The positional slice is applied on top of the filtered result and is
+ * independent of `--any`/`--not`. Omitting both flags performs no slicing.
+ *
  * Intended as an intermediate pipeline command: matching objects are emitted via
  * {@link CommandContext.output}, and a hint is printed when run with no
  * downstream pipe.
@@ -265,6 +297,8 @@ function matches(item: Record<string, unknown>, cond: ParsedCondition, icase: bo
  * cmd | filter role=admin,state=running | next_cmd
  * cmd | filter !name=~^X --any | next_cmd
  * cmd | filter name=~^bot|^host | next_cmd
+ * cmd | filter role=admin --head 5 | next_cmd
+ * cmd | filter role=admin -h 2 -t 2 | next_cmd
  * ```
  */
 export class FilterCommand extends Command {
@@ -289,6 +323,18 @@ export class FilterCommand extends Command {
                     name: 'icase',
                     description: 'Case-insensitive string comparison',
                     schema: z.boolean()
+                },
+                {
+                    name: 'head',
+                    description: 'Number of leading items to keep',
+                    aliases: ['h'],
+                    schema: z.coerce.number().int().min(1)
+                },
+                {
+                    name: 'tail',
+                    description: 'Number of trailing items to keep',
+                    aliases: ['t'],
+                    schema: z.coerce.number().int().min(1)
                 }
             ],
             undefined,
@@ -301,7 +347,7 @@ export class FilterCommand extends Command {
      * @param ctx - Execution context. When `ctx.output` is absent (no downstream
      *   `|` segment) a usage hint is written to stdout instead.
      * @param args - Provides the positional `conditions` argument plus the
-     *   `--any`, `--not` and `--icase` flags.
+     *   `--any`, `--not`, `--icase`, `--head` and `--tail` flags.
      * @throws {Error} When a condition cannot be parsed (empty key or value,
      *   unknown operator, or invalid regex).
      */
@@ -319,20 +365,25 @@ export class FilterCommand extends Command {
         )
             .map((s) => s.trim())
             .filter((s) => s !== '');
-        if (conditions.length === 0) {
-            ctx.output.submit(items);
-            return;
-        }
         const any = await args.flag('any');
         const not = await args.flag('not');
         const icase = await args.flag('icase');
-        const parsed: ParsedCondition[] = conditions.map((c) => parseCondition(c, icase));
-        const filtered = items.filter((item) => {
-            const ok = any
-                ? parsed.some((cond) => matches(item, cond, icase))
-                : parsed.every((cond) => matches(item, cond, icase));
-            return not ? !ok : ok;
-        });
-        ctx.output.submit(filtered);
+
+        let result: Record<string, unknown>[] = items;
+        if (conditions.length > 0) {
+            const parsed: ParsedCondition[] = conditions.map((c) => parseCondition(c, icase));
+            result = items.filter((item) => {
+                const ok = any
+                    ? parsed.some((cond) => matches(item, cond, icase))
+                    : parsed.every((cond) => matches(item, cond, icase));
+                return not ? !ok : ok;
+            });
+        }
+
+        const head = args.has('head') ? await args.require<number>('head') : undefined;
+        const tail = args.has('tail') ? await args.require<number>('tail') : undefined;
+        result = applyHeadTail(result, head, tail);
+
+        ctx.output.submit(result);
     }
 }

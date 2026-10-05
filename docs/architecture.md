@@ -71,6 +71,8 @@ Given `["config", "set", "--theme", "dark"]`:
 - **Empty quotes**: `""` → `[""]`
 - **Unclosed quotes**: `"hello` → `ParseError: Unclosed " quote`
 
+Because quotes cannot appear mid-token, a quoted empty value like `author=""` cannot be passed as `new=` in `select`. The empty-string literal is instead written with a bare empty right-hand side (`new=`, e.g. `author=`), which stays a valid single token.
+
 ## Argument parsing
 
 [`parseFlags()`](https://github.com/johanneslatzel/terminal/blob/main/src/input/args-parser.ts) converts unmatched tokens to `Record<string, string>`:

@@ -4,6 +4,7 @@ import { Terminal } from '../../../src/terminal.js';
 import { command } from '../../../src/command-factory.js';
 import { PipelineInputAcceptance } from '../../../src/types.js';
 import { CommandArguments } from '../../../src/command-arguments.js';
+import { InvalidArgumentsError } from '../../../src/errors.js';
 import { FilterCommand } from '../../../src/commands/filter.js';
 import { setupTerminal } from '../../helpers/setup-terminal.js';
 import { waitForOutput } from '../../helpers/wait-for-output.js';
@@ -367,3 +368,150 @@ describe('filter command (direct unit tests)', () => {
     });
 });
 
+
+
+describe('filter command (head/tail slicing)', () => {
+    function makeCtx() {
+        const submit = vi.fn();
+        const stdout = { write: vi.fn() };
+        const ctx: any = {
+            output: { submit },
+            logger: { debug: () => {} },
+            stdin: { on: () => {}, removeListener: () => {} },
+            stdout,
+            state: {}
+        };
+        return { ctx, submit };
+    }
+
+    const five = [{ i: 1 }, { i: 2 }, { i: 3 }, { i: 4 }, { i: 5 }];
+
+    async function run(
+        record: Record<string, string>,
+        items: Record<string, unknown>[]
+    ): Promise<ReturnType<typeof vi.fn>> {
+        const { ctx, submit } = makeCtx();
+        const cmd = new FilterCommand();
+        const args = new CommandArguments(record, null, cmd.definitions(), items);
+        await cmd.execute(ctx, args);
+        return submit;
+    }
+
+    async function expectHeadTailThrow(record: Record<string, string>): Promise<void> {
+        const { ctx } = makeCtx();
+        const cmd = new FilterCommand();
+        const args = new CommandArguments(record, null, cmd.definitions(), five);
+        await expect(cmd.execute(ctx, args)).rejects.toThrow(InvalidArgumentsError);
+    }
+
+    it('keeps the first N items with --head', async () => {
+        const submit = await run({ head: '2' }, five);
+        expect(submit).toHaveBeenCalledWith([{ i: 1 }, { i: 2 }]);
+    });
+
+    it('keeps the last N items with --tail', async () => {
+        const submit = await run({ tail: '2' }, five);
+        expect(submit).toHaveBeenCalledWith([{ i: 4 }, { i: 5 }]);
+    });
+
+    it('keeps head and tail as disjoint slices when both given', async () => {
+        const submit = await run({ head: '2', tail: '2' }, five);
+        expect(submit).toHaveBeenCalledWith([{ i: 1 }, { i: 2 }, { i: 4 }, { i: 5 }]);
+    });
+
+    it('returns the whole input when head+tail overlaps', async () => {
+        const submit = await run({ head: '3', tail: '3' }, five);
+        expect(submit).toHaveBeenCalledWith(five);
+    });
+
+    it('returns the whole input when head+tail equals the count', async () => {
+        const submit = await run({ head: '2', tail: '3' }, five);
+        expect(submit).toHaveBeenCalledWith(five);
+    });
+
+    it('applies the slice on top of the value predicate', async () => {
+        const submit = await run({ conditions: 'i>1', head: '1' }, five);
+        expect(submit).toHaveBeenCalledWith([{ i: 2 }]);
+    });
+
+    it('applies the slice to the inverted predicate result', async () => {
+        const submit = await run({ conditions: 'i>3', not: 'true', head: '2' }, five);
+        expect(submit).toHaveBeenCalledWith([{ i: 1 }, { i: 2 }]);
+    });
+
+    it('passes through everything when neither flag is given', async () => {
+        const submit = await run({}, five);
+        expect(submit).toHaveBeenCalledWith(five);
+    });
+
+    it('returns without submitting for empty input even with head', async () => {
+        const submit = await run({ head: '2' }, []);
+        expect(submit).not.toHaveBeenCalled();
+    });
+
+    it('applies the slice on top of the --any predicate result', async () => {
+        const submit = await run({ conditions: 'i>4,i<2', any: 'true', head: '1' }, five);
+        expect(submit).toHaveBeenCalledWith([{ i: 1 }]);
+    });
+
+    it('rejects a zero head', async () => {
+        await expectHeadTailThrow({ head: '0' });
+    });
+
+    it('rejects a zero tail', async () => {
+        await expectHeadTailThrow({ tail: '0' });
+    });
+
+    it('rejects a negative head', async () => {
+        await expectHeadTailThrow({ head: '-1' });
+    });
+
+    it('rejects a negative tail', async () => {
+        await expectHeadTailThrow({ tail: '-5' });
+    });
+
+    it('rejects a non-numeric head', async () => {
+        await expectHeadTailThrow({ head: 'abc' });
+    });
+
+    it('rejects a non-integer head', async () => {
+        await expectHeadTailThrow({ head: '2.5' });
+    });
+});
+
+describe('filter command (head/tail integration)', () => {
+    it('prints a hint when run as a standalone command with head/tail', async () => {
+        const { stdin, chunks, term, stop } = setupTerminal();
+        try {
+            await term.start();
+            stdin.write('filter --head 2\n');
+            await waitForOutput(chunks, (s) => s.includes('intermediate'));
+            expect(chunks.join('')).toContain('filter is an intermediate pipeline command');
+        } finally {
+            await stop();
+        }
+    });
+
+    it('supports the short -h and -t aliases through the pipeline parser', async () => {
+        const { stdin, term, stop } = setupTerminal();
+        const log: unknown[] = [];
+        try {
+            const producer = command('producer', async (ctx) => {
+                for (let i = 1; i <= 5; i++) ctx.output!.submit({ i });
+            }, { acceptsPipelineInput: PipelineInputAcceptance.None, providesPipelineOutput: true });
+            const consumer = command('consumer', async (_ctx, args) => {
+                log.push(await args.requirePipelineArray());
+            }, { acceptsPipelineInput: PipelineInputAcceptance.Array });
+
+            term.register(producer);
+            term.register(consumer);
+            await term.start();
+
+            stdin.write('producer | filter -h 2 -t 1 | consumer\n');
+            await new Promise((r) => setTimeout(r, 100));
+            expect(log).toEqual([[{ i: 1 }, { i: 2 }, { i: 5 }]]);
+        } finally {
+            await stop();
+        }
+    });
+});

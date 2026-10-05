@@ -112,26 +112,59 @@ Standalone it writes an empty array:
 
 Objects with missing keys produce empty cells. Nested objects and arrays render as compact JSON (`{"x":1}`, `["a","b"]`), not `[object Object]`.
 
-## `select` - Pick attributes
+## `csv` - Format as CSV
 
-[`SelectCommand`](https://github.com/johanneslatzel/terminal/blob/main/src/commands/select.ts). Keeps only the listed attributes from each object. Names are a positional comma-separated argument; whitespace around commas is tolerated (`select name, age`). Missing attributes are silently ignored; only own (non-inherited) keys are picked. Without arguments all attributes pass through.
+[`CsvCommand`](https://github.com/johanneslatzel/terminal/blob/main/src/commands/csv.ts). Formats pipeline objects as a CSV document. The header row is the union of all keys in first-seen order; cells containing commas, quotes, or newlines are quoted. Empty input writes nothing.
+
+```
+> ls | csv
+name,size
+file1.txt,1024
+file2.txt,2048
+```
+
+Nested objects and arrays are JSON-stringified in the cell (`{"x":1}`, `"[1,2]"`); `null`/missing values render as empty cells.
+
+## `select` - Pick, rename and set attributes
+
+[`SelectCommand`](https://github.com/johanneslatzel/terminal/blob/main/src/commands/select.ts). Projects each object to the listed attributes, optionally renaming them or filling in empty values. Names are a positional comma-separated argument; whitespace around commas is tolerated (`select name, age`). Bare names keep the object's own (non-inherited) top-level key; a missing kept attribute is silently ignored. Without arguments all attributes pass through.
+
+Each comma-separated item is one projection:
+
+| Form | Meaning |
+|---|---|
+| `key` | Keep the object's own `key` as-is |
+| `new=old` | Rename: resolve source `old` (dot-notation supported) into output `new` |
+| `new=` | Emit `new` as an empty string |
+
+Rename pairs apply against the original object (no chaining), so `a=b, b=a` swaps both values; a missing source path is silently ignored. The last projection wins when two target the same output key. An empty output key (`=x`) throws an error.
 
 ```
 > cmd | select name,age | next_cmd
-> cmd | select | next_cmd
+> cmd | select id=taskId | next_cmd
+> cmd | select owner=user.name, author= | next_cmd
 ```
 
 ## `sort` - Sort objects
 
-[`SortCommand`](https://github.com/johanneslatzel/terminal/blob/main/src/commands/sort.ts). Sorts objects by an attribute; defaults to the first key of the first object.
+[`SortCommand`](https://github.com/johanneslatzel/terminal/blob/main/src/commands/sort.ts). Sorts objects by one or more comma-separated attributes (a positional argument); later attributes break ties. Defaults to the first key of the first object.
+
+`sort` is an intermediate pipeline command.
 
 ```
-> cmd | sort --attribute name | next_cmd
-> cmd | sort -a name          | next_cmd   # short alias
+> cmd | sort name | next_cmd
+> cmd | sort milestone, status, title | next_cmd   # later names are tie-breakers
 > cmd | sort | next_cmd
 ```
 
-Numbers compare numerically, everything else as strings; `null` sorts last. Empty or universally missing sort keys leave objects in their original order.
+Use `-d` / `--descending` to reverse the sort order:
+
+```
+> cmd | sort name -d | next_cmd                    # Z → A
+> cmd | sort milestone, status -d | next_cmd       # entire tie-breaker order reversed
+```
+
+Numbers compare numerically, everything else as strings; `null` sorts last. Empty or universally missing sort keys leave objects in their original order. Ties are resolved by the next listed attribute; all attributes tied means the original order is kept.
 
 ## `clip` - Copy to clipboard
 
@@ -183,6 +216,14 @@ A leading `!` negates a condition; `!!` cancels out. `null`/missing values fail 
 > cmd | filter name=alice --icase
 ```
 
+`-h`/`--head N` keeps the first N matching items and `-t`/`--tail N` keeps the last N; with both the result is the head slice followed by the tail slice (the whole input passes through when the slices overlap or sum to the count). The positional slice is applied on top of the filtered result and is independent of `--any`/`--not`. Omitting both flags performs no slicing.
+
+```
+> cmd | filter role=admin --head 5 | next_cmd
+> cmd | filter role=admin -h 2 -t 2 | next_cmd
+> cmd | filter --tail 3 | next_cmd
+```
+
 ## `aggregate` - Aggregate objects
 
 [`AggregateCommand`](https://github.com/johanneslatzel/terminal/blob/main/src/commands/aggregate.ts). Reduces pipeline objects to a single value or grouped rows.
@@ -211,6 +252,24 @@ Without grouping, a single object is emitted: `{ "mean": 5.33 }`. `-g` / `--grou
   { "team": "beta",  "sum": 2 }
 ]
 ```
+
+## `from` / `to` - File I/O for JSON/CSV
+
+[`FromCommand`](https://github.com/johanneslatzel/terminal/blob/main/src/commands/from.ts) reads a JSON or CSV file (format inferred from the file extension) and submits each record as a pipeline object. [`ToCommand`](https://github.com/johanneslatzel/terminal/blob/main/src/commands/to.ts) writes pipeline objects back out as JSON or CSV.
+
+```
+> from data.csv | sort name | table
+> from data.csv --delimiter ',' | table
+> from out.json | filter role=admin
+> cmd | select name,age | to out.csv --delimiter ','
+```
+
+| Format | Extension | Read | Write |
+|---|---|---|---|
+| JSON | `.json` | Array of objects or single object | Pretty-printed JSON array |
+| CSV | `.csv` | Header row + rows | Header row (union of keys) + rows |
+
+CSV cells are strings; cells containing the delimiter, quotes, or newlines are quoted. CSV files use the terminal's configured default delimiter (`;` by default, configurable via the `defaultDelimiter` terminal option); pass `--delimiter` with a single character (e.g. `','`) to override for a single command. A leading UTF-8 BOM is ignored for both JSON and CSV; malformed CSV (an unterminated or misquoted field) and malformed JSON throw a clear error. Unknown file extensions throw an error.
 
 ## `shortcut` - Manage persistent command shortcuts
 

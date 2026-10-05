@@ -22,7 +22,10 @@ import { ClearCommand } from './commands/clear.js';
 import { SelectCommand } from './commands/select.js';
 import { JsonCommand } from './commands/json.js';
 import { TableCommand } from './commands/table.js';
+import { CsvCommand } from './commands/csv.js';
 import { SortCommand } from './commands/sort.js';
+import { FromCommand } from './commands/from.js';
+import { ToCommand } from './commands/to.js';
 import { ClipCommand } from './commands/clip.js';
 import { FilterCommand } from './commands/filter.js';
 import { AggregateCommand } from './commands/aggregate.js';
@@ -86,7 +89,8 @@ export class Terminal {
         stdout: process.stdout,
         historySize: 100,
         dropInflightKeystrokes: false,
-        silentSigint: false
+        silentSigint: false,
+        defaultDelimiter: ';'
     };
 
     private options: TerminalOptions & {
@@ -96,6 +100,7 @@ export class Terminal {
         historySize: number;
         dropInflightKeystrokes: boolean;
         silentSigint: boolean;
+        defaultDelimiter: string;
     };
     private ctx: CommandContext;
     private ctxState: Record<string, unknown> = {};
@@ -148,7 +153,10 @@ export class Terminal {
         this.register(new SelectCommand());
         this.register(new JsonCommand());
         this.register(new TableCommand());
+        this.register(new CsvCommand());
         this.register(new SortCommand());
+        this.register(new FromCommand());
+        this.register(new ToCommand());
         this.register(new ClipCommand());
         this.register(new FilterCommand());
         this.register(new AggregateCommand());
@@ -160,6 +168,14 @@ export class Terminal {
      */
     register(command: Command): void {
         this.tree.add(command);
+    }
+
+    /**
+     * Default CSV delimiter configured for this terminal instance.
+     * Used by `from`/`to` when `--delimiter` is not provided.
+     */
+    get defaultDelimiter(): string {
+        return this.options.defaultDelimiter;
     }
 
     /**

@@ -17,7 +17,10 @@ nav:
   - Quick Start: quickstart.md
   - Architecture: architecture.md
   - Built-in Commands: builtins.md
-  - Terminal: terminal/index.md
+  - Terminal:
+    - Overview: terminal/index.md
+    - History Persistence: terminal/history.md
+    - Command Shortcuts: terminal/shortcuts.md
   - Commands:
     - Overview: commands/index.md
     - Classes: commands/classes.md

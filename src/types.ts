@@ -273,4 +273,9 @@ export interface TerminalOptions {
      * reset, but no visible indicator is printed.  Default `false`.
      */
     silentSigint?: boolean;
+    /**
+     * Default CSV delimiter for `from`/`to` commands when `--delimiter` is
+     * not provided.  Default `';'`.
+     */
+    defaultDelimiter?: string;
 }

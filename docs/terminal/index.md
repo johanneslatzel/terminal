@@ -20,6 +20,7 @@ The `Terminal` class creates an interactive shell; it manages the readline loop,
 | `shortcutPath` | `./shortcuts.json` | Path for [persisting command shortcuts](shortcuts.md) (JSON object) |
 | `dropInflightKeystrokes` | `false` | When `true`, suppresses echo and discards input that arrives while a command is executing (TTY only). When `false` (default), input is queued and processed after the command finishes. |
 | `silentSigint` | `false` | When `true`, suppresses the `^C` echo normally written to stdout on Ctrl+C. The current input line is still cleared and the prompt is re-displayed. |
+| `defaultDelimiter` | `";"` | Default CSV delimiter used by the `from`/`to` builtins when `--delimiter` is not passed. |
 
 ## Lifecycle
 

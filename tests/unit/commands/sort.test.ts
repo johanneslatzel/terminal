@@ -40,7 +40,7 @@ describe('sort command', () => {
         expect(log).toEqual([[{ name: 'Alice' }, { name: 'Bob' }, { name: 'Charlie' }]]);
     });
 
-    it('sorts by specified --attribute', async () => {
+    it('sorts by a specified attribute', async () => {
         const log: unknown[] = [];
 
         const producer = command('producer', async (ctx) => {
@@ -57,7 +57,7 @@ describe('sort command', () => {
         term.register(consumer);
         await term.start();
 
-        stdin.write('producer | sort --attribute rank | consumer\n');
+        stdin.write('producer | sort rank | consumer\n');
         await new Promise((r) => setTimeout(r, 100));
 
         expect(log).toEqual([
@@ -125,7 +125,7 @@ describe('sort command', () => {
         expect(chunks.join('')).toContain('intermediate pipeline command');
     });
 
-    it('passes through when --attribute is an empty string', async () => {
+    it('passes through when the attributes argument is empty', async () => {
         const log: unknown[] = [];
 
         const producer = command('producer', async (ctx) => {
@@ -141,7 +141,7 @@ describe('sort command', () => {
         term.register(consumer);
         await term.start();
 
-        stdin.write('producer | sort --attribute "" | consumer\n');
+        stdin.write('producer | sort "" | consumer\n');
         await new Promise((r) => setTimeout(r, 100));
 
         expect(log).toEqual([[{ b: 1 }, { a: 2 }]]);
@@ -164,13 +164,13 @@ describe('sort command', () => {
         term.register(consumer);
         await term.start();
 
-        stdin.write('producer | sort --attribute key | consumer\n');
+        stdin.write('producer | sort key | consumer\n');
         await new Promise((r) => setTimeout(r, 100));
 
         expect(log).toEqual([[{ key: '10' }, { key: 9 }, { key: 'x' }]]);
     });
 
-    it('preserves order when --attribute is missing on all items', async () => {
+    it('preserves order when the attribute is missing on all items', async () => {
         const log: unknown[] = [];
 
         const producer = command('producer', async (ctx) => {
@@ -186,7 +186,7 @@ describe('sort command', () => {
         term.register(consumer);
         await term.start();
 
-        stdin.write('producer | sort --attribute missing | consumer\n');
+        stdin.write('producer | sort missing | consumer\n');
         await new Promise((r) => setTimeout(r, 100));
 
         expect(log).toEqual([[{ name: 'b' }, { name: 'a' }]]);
@@ -210,7 +210,7 @@ describe('sort command', () => {
         term.register(consumer);
         await term.start();
 
-        stdin.write('producer | sort --attribute rank | consumer\n');
+        stdin.write('producer | sort rank | consumer\n');
         await new Promise((r) => setTimeout(r, 100));
 
         expect(log).toEqual([
@@ -221,6 +221,34 @@ describe('sort command', () => {
                 { name: 'missing-two' }
             ]
         ]);
+    });
+    it('sorts by multiple attributes using later ones as tie-breakers', async () => {
+        const log: unknown[] = [];
+
+        const producer = command('producer', async (ctx) => {
+            ctx.output!.submit({ id: 1, milestone: 'M2', status: 'done', title: 'B' });
+            ctx.output!.submit({ id: 2, milestone: 'M1', status: 'open', title: 'Z' });
+            ctx.output!.submit({ id: 3, milestone: 'M2', status: 'open', title: 'A' });
+            ctx.output!.submit({ id: 4, milestone: 'M2', status: 'open', title: 'B' });
+        }, { acceptsPipelineInput: PipelineInputAcceptance.None, providesPipelineOutput: true });
+
+        const consumer = command('consumer', async (_ctx, args) => {
+            log.push(await args.requirePipelineArray());
+        }, { acceptsPipelineInput: PipelineInputAcceptance.Array });
+
+        term.register(producer);
+        term.register(consumer);
+        await term.start();
+
+        stdin.write('producer | sort milestone, status, title | consumer\n');
+        await new Promise((r) => setTimeout(r, 100));
+
+        expect(log).toEqual([[
+            { id: 2, milestone: 'M1', status: 'open', title: 'Z' },
+            { id: 1, milestone: 'M2', status: 'done', title: 'B' },
+            { id: 3, milestone: 'M2', status: 'open', title: 'A' },
+            { id: 4, milestone: 'M2', status: 'open', title: 'B' }
+        ]]);
     });
 });
 
@@ -275,7 +303,7 @@ describe('sort command (additional branches)', () => {
     });
 });
 
-describe('sort command (alias and edge cases)', () => {
+describe('sort command (edge cases)', () => {
     let stdin: PassThrough;
     let term: Terminal;
     let stop: () => Promise<void>;
@@ -285,31 +313,6 @@ describe('sort command (alias and edge cases)', () => {
     });
 
     afterEach(() => stop());
-
-    it('sorts by --attribute using short alias -a', async () => {
-        const log: unknown[] = [];
-
-        const producer = command('producer', async (ctx) => {
-            ctx.output!.submit({ name: 'Charlie', rank: 3 });
-            ctx.output!.submit({ name: 'Alice', rank: 1 });
-            ctx.output!.submit({ name: 'Bob', rank: 2 });
-        }, { acceptsPipelineInput: PipelineInputAcceptance.None, providesPipelineOutput: true });
-
-        const consumer = command('consumer', async (_ctx, args) => {
-            log.push(await args.requirePipelineArray());
-        }, { acceptsPipelineInput: PipelineInputAcceptance.Array });
-
-        term.register(producer);
-        term.register(consumer);
-        await term.start();
-
-        stdin.write('producer | sort -a rank | consumer\n');
-        await new Promise((r) => setTimeout(r, 100));
-
-        expect(log).toEqual([
-            [{ name: 'Alice', rank: 1 }, { name: 'Bob', rank: 2 }, { name: 'Charlie', rank: 3 }]
-        ]);
-    });
 
     it('handles both values being null for sort key', async () => {
         const log: unknown[] = [];
@@ -332,6 +335,123 @@ describe('sort command (alias and edge cases)', () => {
 
         expect(log).toHaveLength(1);
         expect((log[0] as unknown[])).toHaveLength(2);
+    });
+});
+
+
+describe('sort command --descending/-d', () => {
+    let stdin: PassThrough;
+    let term: Terminal;
+    let stop: () => Promise<void>;
+
+    beforeEach(() => {
+        ({ stdin, term, stop } = setupTerminal());
+    });
+
+    afterEach(() => stop());
+
+    it('sorts in descending order by a single attribute', async () => {
+        const log: unknown[] = [];
+
+        const producer = command('producer', async (ctx) => {
+            ctx.output!.submit({ name: 'Charlie', rank: 3 });
+            ctx.output!.submit({ name: 'Alice', rank: 1 });
+            ctx.output!.submit({ name: 'Bob', rank: 2 });
+        }, { acceptsPipelineInput: PipelineInputAcceptance.None, providesPipelineOutput: true });
+
+        const consumer = command('consumer', async (_ctx, args) => {
+            log.push(await args.requirePipelineArray());
+        }, { acceptsPipelineInput: PipelineInputAcceptance.Array });
+
+        term.register(producer);
+        term.register(consumer);
+        await term.start();
+
+        stdin.write('producer | sort rank -d | consumer\n');
+        await new Promise((r) => setTimeout(r, 100));
+
+        expect(log).toEqual([
+            [{ name: 'Charlie', rank: 3 }, { name: 'Bob', rank: 2 }, { name: 'Alice', rank: 1 }]
+        ]);
+    });
+
+    it('reverses the entire tie-breaker order with descending', async () => {
+        const log: unknown[] = [];
+
+        const producer = command('producer', async (ctx) => {
+            ctx.output!.submit({ id: 1, milestone: 'M2', status: 'done', title: 'B' });
+            ctx.output!.submit({ id: 2, milestone: 'M1', status: 'open', title: 'Z' });
+            ctx.output!.submit({ id: 3, milestone: 'M2', status: 'open', title: 'A' });
+            ctx.output!.submit({ id: 4, milestone: 'M2', status: 'open', title: 'B' });
+        }, { acceptsPipelineInput: PipelineInputAcceptance.None, providesPipelineOutput: true });
+
+        const consumer = command('consumer', async (_ctx, args) => {
+            log.push(await args.requirePipelineArray());
+        }, { acceptsPipelineInput: PipelineInputAcceptance.Array });
+
+        term.register(producer);
+        term.register(consumer);
+        await term.start();
+
+        stdin.write('producer | sort milestone, status, title -d | consumer\n');
+        await new Promise((r) => setTimeout(r, 100));
+
+        expect(log).toEqual([[
+            { id: 4, milestone: 'M2', status: 'open', title: 'B' },
+            { id: 3, milestone: 'M2', status: 'open', title: 'A' },
+            { id: 1, milestone: 'M2', status: 'done', title: 'B' },
+            { id: 2, milestone: 'M1', status: 'open', title: 'Z' }
+        ]]);
+    });
+
+    it('sorts in descending order using default first attribute', async () => {
+        const log: unknown[] = [];
+
+        const producer = command('producer', async (ctx) => {
+            ctx.output!.submit({ name: 'Charlie' });
+            ctx.output!.submit({ name: 'Alice' });
+            ctx.output!.submit({ name: 'Bob' });
+        }, { acceptsPipelineInput: PipelineInputAcceptance.None, providesPipelineOutput: true });
+
+        const consumer = command('consumer', async (_ctx, args) => {
+            log.push(await args.requirePipelineArray());
+        }, { acceptsPipelineInput: PipelineInputAcceptance.Array });
+
+        term.register(producer);
+        term.register(consumer);
+        await term.start();
+
+        stdin.write('producer | sort -d | consumer\n');
+        await new Promise((r) => setTimeout(r, 100));
+
+        expect(log).toEqual([[{ name: 'Charlie' }, { name: 'Bob' }, { name: 'Alice' }]]);
+    });
+
+    it('reverses nulls-last order in descending mode', async () => {
+        const log: unknown[] = [];
+
+        const producer = command('producer', async (ctx) => {
+            ctx.output!.submit({ val: null });
+            ctx.output!.submit({ val: 3 });
+            ctx.output!.submit({ val: 1 });
+        }, { acceptsPipelineInput: PipelineInputAcceptance.None, providesPipelineOutput: true });
+
+        const consumer = command('consumer', async (_ctx, args) => {
+            log.push(await args.requirePipelineArray());
+        }, { acceptsPipelineInput: PipelineInputAcceptance.Array });
+
+        term.register(producer);
+        term.register(consumer);
+        await term.start();
+
+        stdin.write('producer | sort val -d | consumer\n');
+        await new Promise((r) => setTimeout(r, 100));
+
+        expect(log).toHaveLength(1);
+        const result = log[0] as Record<string, unknown>[];
+        expect(result[0]!.val).toBeNull();
+        expect(result[1]!.val).toBe(3);
+        expect(result[2]!.val).toBe(1);
     });
 });
 
